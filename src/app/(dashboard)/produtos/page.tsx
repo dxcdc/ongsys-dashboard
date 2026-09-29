@@ -32,7 +32,6 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from "@/src/components/ui/dropdown-menu"
-import { clearCache } from '@/src/lib/api/cache';
 import { LoadingScreen } from "@/src/components/ui/LoadingScreen"
 
 const PAGE_SIZE = 20
@@ -163,10 +162,6 @@ export default function ProdutosPage() {
 
     // Carregar todos os produtos na montagem do componente
     useEffect(() => {
-        // Limpar cache em desenvolvimento
-        if (process.env.NODE_ENV === 'development') {
-            clearCache()
-        }
         fetchAllProducts()
     }, [])
 

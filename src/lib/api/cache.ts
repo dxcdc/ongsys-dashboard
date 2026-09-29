@@ -1,5 +1,3 @@
-import fs from 'fs'
-import path from 'path'
 import { CACHE_TTL_MS } from './cache-config'
 
 interface CacheItem {
@@ -9,11 +7,30 @@ interface CacheItem {
 
 const cache = new Map<string, CacheItem>()
 const CACHE_TTL = CACHE_TTL_MS
-const CACHE_DIR = path.join(process.cwd(), '.cache')
 
-function getFilePath(key: string): string {
+function getFsAndPath() {
+    if (typeof window !== 'undefined') return { fs: null, path: null }
+    try {
+        const fs = require('fs')
+        const path = require('path')
+        return { fs, path }
+    } catch {
+        return { fs: null, path: null }
+    }
+}
+
+function getCacheDir(): string | null {
+    const { path } = getFsAndPath()
+    if (!path) return null
+    return path.join(process.cwd(), '.cache')
+}
+
+function getFilePath(key: string): string | null {
+    const { path } = getFsAndPath()
+    const dir = getCacheDir()
+    if (!path || !dir) return null
     const safeKey = key.replace(/[^a-zA-Z0-9_-]/g, '_')
-    return path.join(CACHE_DIR, `${safeKey}.json`)
+    return path.join(dir, `${safeKey}.json`)
 }
 
 export function getCached<T>(key: string): T | null {
@@ -28,8 +45,9 @@ export function getCached<T>(key: string): T | null {
 
     // 2. Checar arquivo em disco (.cache/)
     try {
+        const { fs } = getFsAndPath()
         const filePath = getFilePath(key)
-        if (fs.existsSync(filePath)) {
+        if (fs && filePath && fs.existsSync(filePath)) {
             const content = fs.readFileSync(filePath, 'utf-8')
             const diskItem: CacheItem = JSON.parse(content)
             if (Date.now() - diskItem.timestamp < CACHE_TTL) {
@@ -58,12 +76,16 @@ export function setCached(key: string, data: any): void {
     cache.set(key, item)
 
     try {
-        if (!fs.existsSync(CACHE_DIR)) {
-            fs.mkdirSync(CACHE_DIR, { recursive: true })
-        }
+        const { fs } = getFsAndPath()
+        const dir = getCacheDir()
         const filePath = getFilePath(key)
-        fs.writeFileSync(filePath, JSON.stringify(item), 'utf-8')
-        console.log(`💾 Cache salvo em disco e memória: ${key}`)
+        if (fs && dir && filePath) {
+            if (!fs.existsSync(dir)) {
+                fs.mkdirSync(dir, { recursive: true })
+            }
+            fs.writeFileSync(filePath, JSON.stringify(item), 'utf-8')
+            console.log(`💾 Cache salvo em disco e memória: ${key}`)
+        }
     } catch (err) {
         console.warn('⚠️ Erro ao salvar cache em disco:', err)
     }
@@ -72,8 +94,10 @@ export function setCached(key: string, data: any): void {
 export function clearCache(): void {
     cache.clear()
     try {
-        if (fs.existsSync(CACHE_DIR)) {
-            fs.rmSync(CACHE_DIR, { recursive: true, force: true })
+        const { fs } = getFsAndPath()
+        const dir = getCacheDir()
+        if (fs && dir && fs.existsSync(dir)) {
+            fs.rmSync(dir, { recursive: true, force: true })
         }
     } catch { }
     console.log('🧹 Cache limpo')
