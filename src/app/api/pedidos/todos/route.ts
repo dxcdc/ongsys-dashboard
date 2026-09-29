@@ -4,8 +4,22 @@ import { pedidosService } from '@/src/lib/api/services'
 export async function GET() {
     try {
         const pedidos = await pedidosService.listarTodos({})
-        const data = pedidos.map((p: any) => ({
-            id: p.idRequisicao,
+        const seen = new Set<string>()
+        const deduplicated: any[] = []
+        pedidos.forEach((p: any) => {
+            const key = p.idPedido ? `p_${p.idPedido}` : (p.idRequisicao ? `r_${p.idRequisicao}` : null)
+            if (key) {
+                if (!seen.has(key)) {
+                    seen.add(key)
+                    deduplicated.push(p)
+                }
+            } else {
+                deduplicated.push(p)
+            }
+        })
+
+        const data = deduplicated.map((p: any) => ({
+            id: p.idPedido ? `${p.idRequisicao}_${p.idPedido}` : (p.idRequisicao || p.id || ''),
             id_requisicao: p.idRequisicao || '',
             id_pedido: p.idPedido || '',
             titulo: p.titulo || '',
@@ -18,7 +32,7 @@ export async function GET() {
             dataEntregaEstimada: p.dataEntregaEstimada || '',
             tipo_pedido: p.tipoPedido || '',
             local_entrega: p.localEntrega,
-            itens_pedido: p.itensPedido || [],
+            itens_pedido: p.itensPedido || p.itens_pedido || [],
             logs: p.logs || [],
             descricao_pedido: p.descricaoPedido || '',
             justificativa_compra: p.justificativaCompra || '',

@@ -12,8 +12,8 @@ export async function GET(request: NextRequest) {
         const primeiraPagina = await pedidosService.listar({}, 1);
         const pedidos = primeiraPagina.data || [];
 
-        // Calcular estatísticas (filtrando etapas válidas sem CANCELADO do array base)
-        const etapasValidas = ETAPAS.filter(e => e.nome !== 'CANCELADO');
+        // Calcular estatísticas (filtrando etapas visíveis)
+        const etapasValidas = ETAPAS.filter(e => !e.oculta);
         const estatisticas = etapasValidas.map(etapa => ({
             nome: etapa.nome,
             ordem: etapa.ordem,
@@ -22,29 +22,18 @@ export async function GET(request: NextRequest) {
             tempoMedio: 0
         }));
 
-        let cancelados = 0;
-
         pedidos.forEach((pedido: any) => {
-            const etapa = identificarEtapaAtual(pedido.logs || []);
-            if (etapa === 'CANCELADO') {
-                cancelados++;
-            } else {
-                const etapaInfo = estatisticas.find(e => e.nome === etapa);
-                if (etapaInfo) etapaInfo.quantidade++;
-            }
+            const etapa = identificarEtapaAtual(pedido.logs || [], pedido.statusPedido || pedido.status_pedido);
+            const etapaInfo = estatisticas.find(e => e.nome === etapa);
+            if (etapaInfo) etapaInfo.quantidade++;
         });
-
-        const estatisticasComCancelados = [
-            ...estatisticas,
-            { nome: 'CANCELADO', ordem: 99, descricao: 'Pedidos cancelados', quantidade: cancelados, tempoMedio: 0 }
-        ];
 
         // Se tiver filtro de etapa, buscar a página específica
         if (etapaFiltro && etapaFiltro !== 'Todas') {
             // Para o filtro, buscamos mais páginas
             const todosPedidos = await pedidosService.listarTodos({});
             const pedidosFiltrados = todosPedidos.filter((pedido: any) => {
-                const etapa = identificarEtapaAtual(pedido.logs || []);
+                const etapa = identificarEtapaAtual(pedido.logs || [], pedido.statusPedido || pedido.status_pedido);
                 return etapa === etapaFiltro;
             });
 
@@ -61,12 +50,12 @@ export async function GET(request: NextRequest) {
             return NextResponse.json({
                 pedidos: pedidosAdaptados,
                 total: pedidosFiltrados.length,
-                estatisticas: estatisticasComCancelados
+                estatisticas: estatisticas
             });
         }
 
         return NextResponse.json({
-            estatisticas: estatisticasComCancelados,
+            estatisticas: estatisticas,
             total: pedidos.length
         });
     } catch (error) {

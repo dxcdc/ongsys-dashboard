@@ -131,7 +131,8 @@ export default function PedidosPage() {
     const getPedidoCentrosCusto = useCallback((pedido: Order): string[] => {
         const centros = new Set<string>()
         pedido.itens_pedido?.forEach((item: any) => {
-            if (item.centroCusto) centros.add(item.centroCusto)
+            const cc = item.centroCusto || item.centro_custo || item.codigoCentroCusto
+            if (cc) centros.add(String(cc).trim())
         })
         return Array.from(centros)
     }, [])
@@ -182,7 +183,20 @@ export default function PedidosPage() {
     useEffect(() => {
         if (allOrdersRaw.length === 0) return
 
-        let filtered = [...allOrdersRaw]
+        // Deduplicar pedidos brutos por id_pedido/id_requisicao
+        const seen = new Set<string>()
+        const uniqueRaw: Order[] = []
+        allOrdersRaw.forEach(order => {
+            const key = order.id_pedido
+                ? `p_${order.id_pedido}`
+                : (order.id_requisicao ? `r_${order.id_requisicao}` : `id_${order.id}`)
+            if (!seen.has(key)) {
+                seen.add(key)
+                uniqueRaw.push(order)
+            }
+        })
+
+        let filtered = [...uniqueRaw]
         filtered = aplicarFiltroCentroCusto(filtered)
 
         if (centroCusto !== 'todos') {
@@ -214,7 +228,7 @@ export default function PedidosPage() {
 
         if (etapa !== 'Todas') {
             filtered = filtered.filter((order: Order) => {
-                const etapaAtual = identificarEtapaAtual(order.logs || [])
+                const etapaAtual = identificarEtapaAtual(order.logs || [], order.status_pedido)
                 return etapaAtual === etapa
             })
         }
@@ -234,17 +248,18 @@ export default function PedidosPage() {
         })
     }, [allOrdersRaw, loading, loadError])
 
-    // Estatísticas de etapas
+    // Estatísticas de etapas (filtrando apenas etapas visíveis)
     const etapasEstatisticas = useMemo(() => {
         if (filteredOrders.length === 0) return []
-        const estatisticas: EtapaEstatistica[] = ETAPAS.map(etapa => ({
+        const etapasVisiveis = ETAPAS.filter(e => !e.oculta)
+        const estatisticas: EtapaEstatistica[] = etapasVisiveis.map(etapa => ({
             nome: etapa.nome,
             descricao: etapa.descricao,
             quantidade: 0,
             ordem: etapa.ordem
         }))
         filteredOrders.forEach((order: Order) => {
-            const etapaAtual = identificarEtapaAtual(order.logs || [])
+            const etapaAtual = identificarEtapaAtual(order.logs || [], order.status_pedido)
             if (etapaAtual) {
                 const etapaInfo = estatisticas.find(e => e.nome === etapaAtual)
                 if (etapaInfo) etapaInfo.quantidade++
@@ -447,7 +462,7 @@ export default function PedidosPage() {
 
             {/* Cards de Estatísticas de Etapas */}
             {etapasEstatisticas.length > 0 && (
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-2 max-w-xl gap-3">
                     {etapasEstatisticas
                         .sort((a, b) => a.ordem - b.ordem)
                         .map((etapaItem) => {
@@ -563,7 +578,7 @@ export default function PedidosPage() {
                         </thead>
                         <tbody>
                             {paginatedOrders.map((order, index) => {
-                                const etapaAtual = identificarEtapaAtual(order.logs || [])
+                                const etapaAtual = identificarEtapaAtual(order.logs || [], order.status_pedido)
                                 const atrasoCotacao = calcularAtrasoCotacao(order)
                                 const pedidoInfo = getPedidoInfo(order)
 
@@ -571,7 +586,7 @@ export default function PedidosPage() {
                                     // Linha para SEPOD
                                     return (
                                         <motion.tr
-                                            key={order.id || order.id_requisicao}
+                                            key={order.id ? String(order.id) : (order.id_pedido ? `${order.id_requisicao}_${order.id_pedido}` : `${order.id_requisicao}_${index}`)}
                                             initial={{ opacity: 0, y: 10 }}
                                             animate={{ opacity: 1, y: 0 }}
                                             transition={{ delay: index * 0.03 }}
@@ -663,7 +678,7 @@ export default function PedidosPage() {
                                     // Linha normal para outros usuários
                                     return (
                                         <motion.tr
-                                            key={order.id || order.id_requisicao}
+                                            key={order.id ? String(order.id) : (order.id_pedido ? `${order.id_requisicao}_${order.id_pedido}` : `${order.id_requisicao}_${index}`)}
                                             initial={{ opacity: 0, y: 10 }}
                                             animate={{ opacity: 1, y: 0 }}
                                             transition={{ delay: index * 0.03 }}

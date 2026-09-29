@@ -107,7 +107,7 @@ export async function GET(request: NextRequest) {
         const paginated = allPedidos.slice(start, start + pageSize);
 
         const pedidosAdaptados = paginated.map((p: any) => ({
-            id: p.idRequisicao,
+            id: p.idPedido ? `${p.idRequisicao}_${p.idPedido}` : (p.idRequisicao || p.id || ''),
             id_requisicao: p.idRequisicao || '',
             id_pedido: p.idPedido || '',
             titulo: p.titulo || '',
@@ -120,7 +120,7 @@ export async function GET(request: NextRequest) {
             dataEntregaEstimada: p.dataEntregaEstimada || '',
             tipo_pedido: p.tipoPedido || '',
             local_entrega: p.localEntrega,
-            itens_pedido: p.itensPedido || [],
+            itens_pedido: p.itensPedido || p.itens_pedido || [],
             logs: p.logs || [],
             descricao_pedido: p.descricaoPedido || '',
             justificativa_compra: p.justificativaCompra || '',

@@ -53,7 +53,7 @@ export const pedidosService = {
                 const data: any[] = [...(primeiraPagina.data || [])]
 
                 if (totalPages > 1) {
-                    const BATCH_SIZE = 6
+                    const BATCH_SIZE = 3
 
                     for (let batchStart = 2; batchStart <= totalPages; batchStart += BATCH_SIZE) {
                         const batchEnd = Math.min(batchStart + BATCH_SIZE - 1, totalPages)
@@ -73,14 +73,34 @@ export const pedidosService = {
                                 console.warn(`⚠️ Página ${batchStart + i} falhou definitivamente`)
                             }
                         })
+
+                        // Pequeno atraso para aliviar o servidor da OngSys e o Cloudflare
+                        if (batchEnd < totalPages) {
+                            await new Promise(r => setTimeout(r, 250))
+                        }
                     }
                 }
 
-                const duration = Date.now() - startTime
-                console.log(`✅ ${data.length} pedidos carregados em ${duration}ms`)
+                // Deduplicar pedidos (evitar registros repetidos entre páginas da API)
+                const seen = new Set<string>()
+                const deduplicatedData: any[] = []
+                data.forEach((p: any) => {
+                    const key = p.idPedido ? `p_${p.idPedido}` : (p.idRequisicao ? `r_${p.idRequisicao}` : null)
+                    if (key) {
+                        if (!seen.has(key)) {
+                            seen.add(key)
+                            deduplicatedData.push(p)
+                        }
+                    } else {
+                        deduplicatedData.push(p)
+                    }
+                })
 
-                setCached(cacheKey, data)
-                return data
+                const duration = Date.now() - startTime
+                console.log(`✅ ${deduplicatedData.length} pedidos únicos carregados em ${duration}ms (total original: ${data.length})`)
+
+                setCached(cacheKey, deduplicatedData)
+                return deduplicatedData
             } catch (error) {
                 console.error('❌ Erro ao buscar pedidos:', error)
                 return []
