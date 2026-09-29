@@ -153,11 +153,12 @@ export async function getDashboardSummaryFromAPI(filters?: DateFilter): Promise<
     // Filtrar pedidos
     let pedidosFiltrados = pedidos
     if (centrosCustoParaFiltrar.length > 0) {
-      pedidosFiltrados = pedidos.filter((pedido: any) =>
-        pedido.itensPedido?.some((item: any) =>
-          centrosCustoParaFiltrar.includes(item.centroCusto)
+      pedidosFiltrados = pedidos.filter((pedido: any) => {
+        const itens = pedido.itensPedido || pedido.itens_pedido || pedido.itens || []
+        return itens.some((item: any) =>
+          centrosCustoParaFiltrar.includes(item.centroCusto || item.centro_custo || item.codigoCentroCusto)
         )
-      )
+      })
       console.log(`  - Pedidos após filtro por centros: ${pedidosFiltrados.length}`)
     }
 
@@ -178,12 +179,14 @@ export async function getDashboardSummaryFromAPI(filters?: DateFilter): Promise<
     // TOP 10 FORNECEDORES
     const supplierMap = new Map<string, TopSupplier>()
     pedidosFiltrados.forEach((pedido: any) => {
-      if (pedido.fornecedor?.nome) {
-        const key = pedido.fornecedor.documento || pedido.fornecedor.nome
+      const nomeFornecedor = pedido.fornecedor?.nome || pedido.fornecedor_nome
+      const docFornecedor = pedido.fornecedor?.documento || pedido.fornecedor_documento || '---'
+      if (nomeFornecedor) {
+        const key = docFornecedor !== '---' ? docFornecedor : nomeFornecedor
         if (!supplierMap.has(key)) {
           supplierMap.set(key, {
-            name: pedido.fornecedor.nome,
-            document: pedido.fornecedor.documento || '---',
+            name: nomeFornecedor,
+            document: docFornecedor,
             totalValue: 0,
             orderCount: 0
           })
@@ -195,14 +198,15 @@ export async function getDashboardSummaryFromAPI(filters?: DateFilter): Promise<
     })
 
     const topSuppliers = Array.from(supplierMap.values())
-      .sort((a, b) => b.totalValue - a.totalValue)
+      .sort((a, b) => b.totalValue - a.totalValue || b.orderCount - a.orderCount)
       .slice(0, 10)
 
     // TOP 10 ITENS
     const itemMap = new Map<string, TopItem>()
     pedidosFiltrados.forEach((pedido: any) => {
-      pedido.itensPedido?.forEach((item: any) => {
-        const key = item.nomeServico || item.nomeProduto || 'Item sem nome'
+      const itens = pedido.itensPedido || pedido.itens_pedido || pedido.itens || []
+      itens.forEach((item: any) => {
+        const key = item.nomeServico || item.nomeProduto || item.nome || item.descricao || 'Item sem nome'
         if (!itemMap.has(key)) {
           itemMap.set(key, {
             name: key,
@@ -213,16 +217,21 @@ export async function getDashboardSummaryFromAPI(filters?: DateFilter): Promise<
           })
         }
         const mapped = itemMap.get(key)!
-        const quantity = parseFloat(item.quantidade) || 0
-        const unitValue = parseFloat(item.valorUnitario) || 0
+        const quantity = parseFloat(item.quantidade) || 1
+        let unitValue = parseFloat(item.valorUnitario || item.valor_unitario || item.precoUnitario || item.preco || item.valor) || 0
+        let itemValue = quantity * unitValue
+        if (itemValue === 0 && item.valorTotal) {
+          itemValue = parseFloat(item.valorTotal) || 0
+        }
+
         mapped.totalQuantity += quantity
-        mapped.totalValue += quantity * unitValue
+        mapped.totalValue += itemValue
         mapped.orderCount += 1
       })
     })
 
     const topItems = Array.from(itemMap.values())
-      .sort((a, b) => b.totalValue - a.totalValue)
+      .sort((a, b) => b.orderCount - a.orderCount || b.totalQuantity - a.totalQuantity || b.totalValue - a.totalValue)
       .slice(0, 10)
 
     // CALCULAR TEMPO MÉDIO APROVAÇÃO → COTAÇÃO
