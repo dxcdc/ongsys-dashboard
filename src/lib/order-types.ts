@@ -122,9 +122,7 @@ export const ETAPAS: EtapaInfo[] = [
 export function normalizarNomeEtapa(etapaRaw?: number | string, acaoText?: string): string | null {
     if (etapaRaw === undefined || etapaRaw === null) return null
     const raw = String(etapaRaw).trim().toUpperCase()
-    const acaoLower = acaoText ? String(acaoText).toLowerCase() : ''
-
-    if (acaoLower.includes('cancel') || acaoLower.includes('negado') || acaoLower.includes('recusado') || raw.includes('CANCEL')) {
+    if (raw === 'CANCELADO' || raw.includes('CANCEL')) {
         return 'CANCELADO'
     }
 
