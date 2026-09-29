@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/src/components/ui/dialog"
 import { Skeleton } from "@/src/components/ui/skeleton"
 import { formatDocument, getDocumentType } from "@/src/lib/utils"
+import { LoadingScreen } from "@/src/components/ui/LoadingScreen"
 
 const PAGE_SIZE = 20
 
@@ -156,16 +157,11 @@ export default function FornecedoresPage() {
 
     if (loading && suppliers.length === 0) {
         return (
-            <div className="space-y-4 p-6">
-                <Skeleton className="h-8 w-48" />
-                <div className="flex gap-3">
-                    <Skeleton className="h-10 flex-1 max-w-sm" />
-                    <Skeleton className="h-10 w-36" />
-                </div>
-                {[...Array(8)].map((_, i) => (
-                    <Skeleton key={i} className="h-12 w-full" />
-                ))}
-            </div>
+            <LoadingScreen
+                variant="skeleton"
+                title="Carregando fornecedores..."
+                description="Buscando a lista completa de empresas e prestadores de serviço cadastrados."
+            />
         )
     }
 

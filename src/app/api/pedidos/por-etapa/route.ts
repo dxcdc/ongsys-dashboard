@@ -1,37 +1,7 @@
 // src/app/api/pedidos/por-etapa/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { pedidosService } from '@/src/lib/api/services';
-
-const ETAPAS = [
-    { nome: 'ETAPA 01', ordem: 1, descricao: 'Criação da Requisição', palavrasChave: ['criou a requisição', 'criou requisição'] },
-    { nome: 'ETAPA 02', ordem: 2, descricao: 'Aprovação', palavrasChave: ['aprovou a requisição', 'aprovou a cotação'] },
-    { nome: 'ETAPA 03', ordem: 3, descricao: 'Cotação', palavrasChave: ['preencheu a cotação', 'enviou a cotação'] },
-    { nome: 'ETAPA 04', ordem: 4, descricao: 'Pedido ao Fornecedor', palavrasChave: ['enviou o pedido ao fornecedor', 'marcou o pedido como enviado'] },
-    { nome: 'ETAPA 05', ordem: 5, descricao: 'Finalização', palavrasChave: ['encerrou o pedido', 'finalizado'] }
-];
-
-function identificarEtapaAtual(pedido: any): string {
-    const logs = pedido.logs || [];
-
-    for (const log of logs) {
-        const acao = log.acao?.toLowerCase() || '';
-        if (acao.includes('cancel') || acao.includes('negado') || acao.includes('recusado')) {
-            return 'CANCELADO';
-        }
-    }
-
-    for (let i = ETAPAS.length - 1; i >= 0; i--) {
-        const etapa = ETAPAS[i];
-        for (const log of logs) {
-            const acao = log.acao?.toLowerCase() || '';
-            if (etapa.palavrasChave.some(palavra => acao.includes(palavra))) {
-                return etapa.nome;
-            }
-        }
-    }
-
-    return 'ETAPA 01';
-}
+import { ETAPAS, identificarEtapaAtual } from '@/src/lib/order-types';
 
 export async function GET(request: NextRequest) {
     try {
@@ -42,8 +12,9 @@ export async function GET(request: NextRequest) {
         const primeiraPagina = await pedidosService.listar({}, 1);
         const pedidos = primeiraPagina.data || [];
 
-        // Calcular estatísticas
-        const estatisticas = ETAPAS.map(etapa => ({
+        // Calcular estatísticas (filtrando etapas válidas sem CANCELADO do array base)
+        const etapasValidas = ETAPAS.filter(e => e.nome !== 'CANCELADO');
+        const estatisticas = etapasValidas.map(etapa => ({
             nome: etapa.nome,
             ordem: etapa.ordem,
             descricao: etapa.descricao,
@@ -54,7 +25,7 @@ export async function GET(request: NextRequest) {
         let cancelados = 0;
 
         pedidos.forEach((pedido: any) => {
-            const etapa = identificarEtapaAtual(pedido);
+            const etapa = identificarEtapaAtual(pedido.logs || []);
             if (etapa === 'CANCELADO') {
                 cancelados++;
             } else {
@@ -73,7 +44,7 @@ export async function GET(request: NextRequest) {
             // Para o filtro, buscamos mais páginas
             const todosPedidos = await pedidosService.listarTodos({});
             const pedidosFiltrados = todosPedidos.filter((pedido: any) => {
-                const etapa = identificarEtapaAtual(pedido);
+                const etapa = identificarEtapaAtual(pedido.logs || []);
                 return etapa === etapaFiltro;
             });
 

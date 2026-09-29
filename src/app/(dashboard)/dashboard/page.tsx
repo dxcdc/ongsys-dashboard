@@ -23,6 +23,7 @@ import { Input } from "@/src/components/ui/input"
 import { DashboardSummary, CostCenter } from "@/src/lib/dashboard-types"
 import { getCostCenterName } from '@/src/lib/cost-centers-map'
 import { useAuth } from '@/src/hooks/useAuth'
+import { LoadingScreen } from '@/src/components/ui/LoadingScreen'
 
 const formatCurrency = (v: number) =>
     new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v)
@@ -57,6 +58,13 @@ export default function DashboardPage() {
         setPartialData(true)
         setError(null)
 
+        let isTimeout = false
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => {
+            isTimeout = true
+            controller.abort()
+        }, 300000) // 5 minutos de tolerância para a primeira carga completa
+
         try {
             const params = new URLSearchParams()
             if (startDate) params.append('startDate', startDate)
@@ -65,10 +73,7 @@ export default function DashboardPage() {
                 params.append('costCenter', selectedCostCenter)
             }
 
-            const controller = new AbortController()
-            const timeoutId = setTimeout(() => controller.abort(), 600000)
-
-            console.log('🔄 Buscando dados do dashboard... (timeout: 10 minutos)')
+            console.log('🔄 Buscando dados do dashboard...')
 
             const response = await fetch(`/api/dashboard?${params.toString()}`, {
                 signal: controller.signal
@@ -76,22 +81,36 @@ export default function DashboardPage() {
 
             clearTimeout(timeoutId)
 
-            if (!response.ok) throw new Error('Erro ao carregar dados')
+            if (!response.ok) {
+                const errorJson = await response.json().catch(() => ({}))
+                throw new Error(errorJson.error || `Erro ${response.status} ao carregar dados do dashboard`)
+            }
+
             const json = await response.json()
 
             console.log('✅ Dados recebidos com sucesso!')
             setData(json)
             setAvailableCostCenters(json.availableCostCenters || [])
         } catch (err: any) {
-            console.error('❌ Erro no fetch:', err)
+            clearTimeout(timeoutId)
+
             if (err.name === 'AbortError') {
-                setError('A requisição demorou muito tempo (mais de 10 minutos). O servidor pode estar lento. Tente novamente mais tarde.')
+                if (isTimeout) {
+                    console.warn('⚠️ Requisição excedeu o tempo limite')
+                    setError('A requisição demorou muito tempo para responder. O servidor pode estar lento. Tente novamente.')
+                } else {
+                    console.log('ℹ️ Requisição anterior cancelada devido a mudança de filtro ou navegação.')
+                    return
+                }
             } else {
+                console.error('❌ Erro no fetch do dashboard:', err)
                 setError(err instanceof Error ? err.message : 'Erro desconhecido')
             }
         } finally {
-            setLoading(false)
-            setPartialData(false)
+            if (!isTimeout) {
+                setLoading(false)
+                setPartialData(false)
+            }
         }
     }
 
@@ -119,15 +138,16 @@ export default function DashboardPage() {
         setShowDateFilter(false)
     }
 
-    // Mostrar loading da autenticação
-    if (authLoading) {
+    // Mostrar loading da autenticação ou de dados do dashboard
+    if (authLoading || (loading && !data)) {
         return (
-            <div className="flex items-center justify-center min-h-screen">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-            </div>
+            <LoadingScreen
+                variant="skeleton"
+                title="Carregando Dashboard..."
+                description="Processando resumos de pedidos, fornecedores e estatísticas financeiras."
+            />
         )
     }
-
     if (error) {
         return (
             <div className="p-6">
@@ -144,26 +164,6 @@ export default function DashboardPage() {
                     >
                         Tentar novamente
                     </Button>
-                </div>
-            </div>
-        )
-    }
-
-    if (loading && !data) {
-        return (
-            <div className="space-y-6 p-6">
-                <div>
-                    <Skeleton className="h-8 w-48 mb-2" />
-                    <Skeleton className="h-4 w-72" />
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    {[...Array(4)].map((_, i) => (
-                        <Skeleton key={i} className="h-28 rounded-xl" />
-                    ))}
-                </div>
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    <Skeleton className="h-96 rounded-xl" />
-                    <Skeleton className="h-96 rounded-xl" />
                 </div>
             </div>
         )

@@ -42,7 +42,7 @@ export function createDataContext<T>(options: CreateDataContextOptions) {
                     const cached = localStorage.getItem(cacheKey)
                     if (cached) {
                         const parsed: CacheData<T> = JSON.parse(cached)
-                        if (Date.now() - parsed.timestamp < CACHE_TTL_MS) {
+                        if (Date.now() - parsed.timestamp < CACHE_TTL_MS && parsed.data && parsed.data.length > 0) {
                             setData(parsed.data)
                             return
                         }
@@ -70,14 +70,22 @@ export function createDataContext<T>(options: CreateDataContextOptions) {
                 setLoadingProgress({ current: 1, total: 1 })
 
                 try {
-                    localStorage.setItem(cacheKey, JSON.stringify({
-                        data: allData,
-                        timestamp: Date.now()
-                    } satisfies CacheData<T>))
+                    if (allData.length > 0) {
+                        localStorage.setItem(cacheKey, JSON.stringify({
+                            data: allData,
+                            timestamp: Date.now()
+                        } satisfies CacheData<T>))
+                    } else {
+                        localStorage.removeItem(cacheKey)
+                    }
                 } catch { }
 
             } catch (error: any) {
-                if (error.name !== 'AbortError') setLoadError(error.message)
+                if (error.name !== 'AbortError') {
+                    setLoadError(error.message)
+                } else {
+                    hasLoadedRef.current = false
+                }
             } finally {
                 setLoading(false)
                 setLoadingProgress({ current: 0, total: 0 })

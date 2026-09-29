@@ -53,7 +53,7 @@ export const pedidosService = {
                 const data: any[] = [...(primeiraPagina.data || [])]
 
                 if (totalPages > 1) {
-                    const BATCH_SIZE = 3
+                    const BATCH_SIZE = 6
 
                     for (let batchStart = 2; batchStart <= totalPages; batchStart += BATCH_SIZE) {
                         const batchEnd = Math.min(batchStart + BATCH_SIZE - 1, totalPages)

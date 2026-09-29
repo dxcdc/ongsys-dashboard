@@ -11,6 +11,7 @@ import { useEffect } from 'react'
 import { PedidosProvider } from '@/src/contexts/PedidosContext'
 import { ProdutosProvider } from '@/src/contexts/ProdutosContext'
 import { FornecedoresProvider } from '@/src/contexts/FornecedoresContext'
+import { LoadingScreen } from '@/src/components/ui/LoadingScreen'
 
 export default function DashboardLayout({
     children,
@@ -31,9 +32,11 @@ export default function DashboardLayout({
 
     if (isLoading) {
         return (
-            <div className="flex items-center justify-center min-h-screen">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-            </div>
+            <LoadingScreen
+                variant="full"
+                title="Autenticando..."
+                description="Verificando as permissões de acesso ao OngSys Dashboard."
+            />
         )
     }
 

@@ -14,6 +14,7 @@ import {
 import { getCostCenterName } from './cost-centers-map'
 import { getServerSession } from 'next-auth'
 import { authOptions } from './auth/auth'
+import { identificarEtapa } from './order-types'
 
 // Função para extrair valor do pedido (soma dos itens)
 function extractValueFromPedido(pedido: any): number {
@@ -64,22 +65,24 @@ function formatTimeInterval(hours: number): string {
   return parts.join(' e ')
 }
 
-// Função para calcular o tempo entre a segunda aprovação e o preenchimento da cotação
+// Função para calcular o tempo entre a aprovação e a cotação
 function calculateTimeBetweenStages(logs: any[]): number | null {
   if (!logs || !Array.isArray(logs)) return null
 
-  // Encontrar todas as aprovações
-  const approvals = logs.filter(log =>
-    log.acao === "Aprovou a requisição."
-  )
+  // Encontrar aprovações (ETAPA 02)
+  const approvals = logs.filter(log => {
+    const etapa = identificarEtapa(log)
+    return etapa === 'ETAPA 02' || log.acao === "Aprovou a requisição."
+  })
 
-  // Pega a segunda aprovação (etapa 3)
-  const secondApproval = approvals.length >= 2 ? approvals[1] : null
+  // Pega a aprovação da requisição (segunda se houver mais de uma, senão a primeira)
+  const secondApproval = approvals.length >= 2 ? approvals[1] : (approvals[0] || null)
 
-  // Encontrar o preenchimento da cotação (etapa 4)
-  const quotationFilled = logs.find(log =>
-    log.acao === "Preencheu a cotação da requisição"
-  )
+  // Encontrar o preenchimento da cotação (ETAPA 03)
+  const quotationFilled = logs.find(log => {
+    const etapa = identificarEtapa(log)
+    return etapa === 'ETAPA 03' || log.acao === "Preencheu a cotação da requisição"
+  })
 
   if (secondApproval && quotationFilled) {
     try {

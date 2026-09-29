@@ -1,21 +1,18 @@
 import { NextAuthOptions } from 'next-auth'
 import CredentialsProvider from 'next-auth/providers/credentials'
-import { PrismaClient, Role } from '@prisma/client'
+import { PrismaClient } from '@prisma/client'
 import bcrypt from 'bcryptjs'
+import { costCentersList } from '../cost-centers-map'
 
 const prisma = new PrismaClient()
 
 type UserRole = 'SUPER_ADMIN' | 'OPERADOR_SEDE' | 'CONSULTOR' | 'SEPOD'
 
-// 🔥 Função para filtrar apenas centros ATITUDE para SEPOD
+// Função para filtrar apenas centros ATITUDE para SEPOD
 function filterAtitudeCenters(centrosCusto: string[]): string[] {
-    // Importar dinamicamente para evitar circular dependency
-    const { costCentersList } = require('@/src/lib/cost-centers-map')
-
-    // Filtrar apenas centros que contêm "ATITUDE" no nome
     const atitudeCodes = costCentersList
-        .filter((center: any) => center.name.toUpperCase().includes('ATITUDE'))
-        .map((center: any) => center.code)
+        .filter((center) => center.name.toUpperCase().includes('ATITUDE'))
+        .map((center) => center.code)
 
     return centrosCusto.filter(code => atitudeCodes.includes(code))
 }
@@ -47,8 +44,6 @@ declare module 'next-auth/jwt' {
     }
 }
 
-const isProduction = process.env.NODE_ENV === 'production'
-
 export const authOptions: NextAuthOptions = {
     providers: [
         CredentialsProvider({
@@ -59,41 +54,41 @@ export const authOptions: NextAuthOptions = {
             },
             async authorize(credentials) {
                 if (!credentials?.email || !credentials?.senha) {
-                    throw new Error('Email e senha obrigatórios')
+                    return null
                 }
 
-                const usuario = await prisma.usuario.findUnique({
-                    where: { email: credentials.email }
-                })
+                try {
+                    const usuario = await prisma.usuario.findUnique({
+                        where: { email: credentials.email }
+                    })
 
-                if (!usuario) {
-                    throw new Error('Usuário não encontrado')
-                }
+                    if (!usuario || !usuario.ativo) {
+                        return null
+                    }
 
-                if (!usuario.ativo) {
-                    throw new Error('Usuário desativado')
-                }
+                    const senhaValida = await bcrypt.compare(credentials.senha, usuario.senha)
 
-                const senhaValida = await bcrypt.compare(credentials.senha, usuario.senha)
+                    if (!senhaValida) {
+                        return null
+                    }
 
-                if (!senhaValida) {
-                    throw new Error('Senha incorreta')
-                }
+                    let centrosCusto = usuario.centrosCusto || []
 
-                let centrosCusto = usuario.centrosCusto || []
+                    if (usuario.role === 'SEPOD') {
+                        centrosCusto = filterAtitudeCenters(centrosCusto)
+                        console.log('🔒 SEPOD - Centros ATITUDE filtrados:', centrosCusto)
+                    }
 
-                // 🔥 Para SEPOD, filtrar apenas centros ATITUDE
-                if (usuario.role === 'SEPOD') {
-                    centrosCusto = filterAtitudeCenters(centrosCusto)
-                    console.log('🔒 SEPOD - Centros ATITUDE filtrados:', centrosCusto)
-                }
-
-                return {
-                    id: usuario.id,
-                    email: usuario.email,
-                    nome: usuario.nome,
-                    role: usuario.role as UserRole,
-                    centrosCusto: centrosCusto
+                    return {
+                        id: usuario.id,
+                        email: usuario.email,
+                        nome: usuario.nome,
+                        role: usuario.role as UserRole,
+                        centrosCusto: centrosCusto
+                    }
+                } catch (err) {
+                    console.error('Erro na autorização do NextAuth:', err)
+                    return null
                 }
             }
         })
@@ -126,5 +121,5 @@ export const authOptions: NextAuthOptions = {
         strategy: 'jwt',
         maxAge: 30 * 24 * 60 * 60
     },
-    secret: process.env.NEXTAUTH_SECRET
+    secret: process.env.NEXTAUTH_SECRET || 'ongsys-dashboard-nextauth-secret-key'
 }

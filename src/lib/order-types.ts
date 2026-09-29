@@ -1,14 +1,18 @@
 export interface Fornecedor {
-    id: string
+    id: number | string
     nome: string
     documento: string
 }
 
 export interface ItemPedido {
     grupo: string
-    idServico: string
-    nomeServico: string
-    quantidade: string
+    idServico?: number | string
+    idProduto?: number | string
+    nomeServico?: string
+    nomeProduto?: string
+    quantidade: number | string
+    valorUnitario?: number | null
+    valorTotal?: number | null
     centroCusto: string
     linkReferencia?: string
     descricao?: string
@@ -31,12 +35,13 @@ export interface LogPedido {
     data: string
     autor: string
     comentarios?: string
+    etapa?: number | string
 }
 
 export interface Order {
-    id: number
-    id_Requisicao: string
-    id_requisicao?: string
+    id?: number | string
+    id_Requisicao?: string | number
+    id_requisicao?: string | number
     titulo?: string
     status_pedido?: string
     fornecedor_id?: string
@@ -72,7 +77,6 @@ export interface OrdersResponse {
 export interface EtapaInfo {
     nome: string
     descricao: string
-    palavrasChave: string[]
     ordem: number  // Para ordenar as etapas
 }
 
@@ -80,91 +84,121 @@ export const ETAPAS: EtapaInfo[] = [
     {
         nome: 'ETAPA 01',
         descricao: 'Criação da Requisição',
-        palavrasChave: ['Criou', 'Editou', 'Enviou a requisição'],
         ordem: 1
     },
     {
         nome: 'ETAPA 02',
         descricao: 'Aprovação da Requisição',
-        palavrasChave: ['Aprovou a requisição'],
         ordem: 2
     },
     {
         nome: 'ETAPA 03',
         descricao: 'Cotação',
-        palavrasChave: ['Preencheu a cotação', 'Enviou a cotação', 'Aprovou a cotação'],
         ordem: 3
     },
     {
         nome: 'ETAPA 04',
         descricao: 'Aprovação da Cotação',
-        palavrasChave: [
-            'Marcou o pedido',
-            'Gerou pedido',
-            'Gerou pedido(s)'
-        ],
         ordem: 4
     },
     {
         nome: 'ETAPA 05',
-        descricao: 'Finalização',
-        palavrasChave: ['Encerrou', 'Finalizou'],
+        descricao: 'Lançamento / Processamento',
         ordem: 5
+    },
+    {
+        nome: 'ETAPA 06',
+        descricao: 'Finalização',
+        ordem: 6
     },
     {
         nome: 'CANCELADO',
         descricao: 'Pedidos Cancelados',
-        palavrasChave: ['Cancelou', 'Negado', 'Recusado', 'cancelamento'],
-        ordem: 6
+        ordem: 7
     }
 ]
 
-// Função para identificar a ETAPA ATUAL de um pedido
+// Função para normalizar o nome da ETAPA vinda da API (aceita números como 1, 2, 3, 4, 5, 6 ou strings como "Etapa 1", "ETAPA 01", etc.)
+export function normalizarNomeEtapa(etapaRaw?: number | string, acaoText?: string): string | null {
+    if (etapaRaw === undefined || etapaRaw === null) return null
+    const raw = String(etapaRaw).trim().toUpperCase()
+    const acaoLower = acaoText ? String(acaoText).toLowerCase() : ''
+
+    if (acaoLower.includes('cancel') || acaoLower.includes('negado') || acaoLower.includes('recusado') || raw.includes('CANCEL')) {
+        return 'CANCELADO'
+    }
+
+    if (raw === '1' || raw === 'ETAPA 01' || raw === 'ETAPA 1') return 'ETAPA 01'
+    if (raw === '2' || raw === 'ETAPA 02' || raw === 'ETAPA 2') return 'ETAPA 02'
+    if (raw === '3' || raw === 'ETAPA 03' || raw === 'ETAPA 3') return 'ETAPA 03'
+    if (raw === '4' || raw === 'ETAPA 04' || raw === 'ETAPA 4') return 'ETAPA 04'
+    if (raw === '5' || raw === 'ETAPA 05' || raw === 'ETAPA 5') return 'ETAPA 05'
+    if (raw === '6' || raw === 'ETAPA 06' || raw === 'ETAPA 6') return 'ETAPA 06'
+
+    const etapaEncontrada = ETAPAS.find(e => e.nome.toUpperCase() === raw)
+    if (etapaEncontrada) return etapaEncontrada.nome
+
+    return null
+}
+
+// Função auxiliar para converter string de data de log ("YYYY-MM-DD HH:mm:ss") em timestamp numérico seguro
+export function parseLogDate(dateStr?: string): number {
+    if (!dateStr) return 0
+    const formattedStr = dateStr.includes(' ') && !dateStr.includes('T')
+        ? dateStr.replace(' ', 'T')
+        : dateStr
+    const timestamp = new Date(formattedStr).getTime()
+    return isNaN(timestamp) ? 0 : timestamp
+}
+
+// Função para identificar qual ETAPA um log pertence a partir de log.etapa
+export function identificarEtapa(log: LogPedido): string | null {
+    if (log.etapa !== undefined && log.etapa !== null) {
+        return normalizarNomeEtapa(log.etapa, log.acao)
+    }
+    return null
+}
+
+// Função para identificar a ETAPA ATUAL de um pedido comparando logs cronologicamente até a data/hora atual
 export function identificarEtapaAtual(logs: LogPedido[]): string | null {
     if (!logs || logs.length === 0) return null
 
-    // Ordenar logs por data (mais recente primeiro)
-    const logsOrdenados = [...logs].sort((a, b) =>
-        new Date(b.data).getTime() - new Date(a.data).getTime()
-    )
+    const agora = Date.now()
 
-    // Verificar primeiro se foi cancelado
-    for (const log of logsOrdenados) {
-        const acao = log.acao.toLowerCase()
-        const etapaCancelado = ETAPAS.find(e => e.nome === 'CANCELADO')
-        if (etapaCancelado?.palavrasChave.some(palavra => acao.includes(palavra.toLowerCase()))) {
-            return 'CANCELADO'
+    // 1. Mapear logs com timestamp e etapa validada
+    const logsValidos = logs
+        .map(log => ({
+            log,
+            timestamp: parseLogDate(log.data),
+            etapa: identificarEtapa(log)
+        }))
+        .filter(item => item.timestamp > 0 && item.timestamp <= agora && item.etapa !== null)
+        .sort((a, b) => a.timestamp - b.timestamp) // Ordem cronológica: antigo -> recente
+
+    if (logsValidos.length === 0) {
+        // Fallback caso as datas venham sem formato padrão
+        for (const log of logs) {
+            const etapa = identificarEtapa(log)
+            if (etapa) return etapa
         }
+        return null
     }
 
-    // Se não foi cancelado, encontrar a última etapa concluída
-    for (let i = ETAPAS.length - 2; i >= 0; i--) { // -2 para ignorar CANCELADO
-        const etapa = ETAPAS[i]
-        for (const log of logsOrdenados) {
-            const acao = log.acao.toLowerCase()
-            if (etapa.palavrasChave.some(palavra => acao.includes(palavra.toLowerCase()))) {
-                return etapa.nome
-            }
-        }
-    }
+    // 2. Se houver qualquer registro de cancelamento no histórico, o status é CANCELADO
+    const cancelado = logsValidos.find(item => item.etapa === 'CANCELADO')
+    if (cancelado) return 'CANCELADO'
 
-    return null
+    // 3. Se o pedido já atingiu a ETAPA 06 (Finalização/Encerramento), permanece na ETAPA 06
+    // (impede que ações administrativas secundárias após o encerramento regridam a etapa)
+    const finalizado = logsValidos.find(item => item.etapa === 'ETAPA 06')
+    if (finalizado) return 'ETAPA 06'
+
+    // 4. Caso contrário, retorna a última etapa concluída na ordem cronológica até o momento atual
+    const ultimoLog = logsValidos[logsValidos.length - 1]
+    return ultimoLog.etapa
 }
 
-// Função para identificar qual ETAPA um log pertence (mantida para a timeline)
-export function identificarEtapa(log: LogPedido): string | null {
-    const acao = log.acao.toLowerCase()
-    for (const etapa of ETAPAS) {
-        for (const palavra of etapa.palavrasChave) {
-            if (acao.includes(palavra.toLowerCase())) {
-                return etapa.nome
-            }
-        }
-    }
-    return null
-}
-
-// Função para agrupar logs por ETAPA (mantida para a timeline)
+// Função para agrupar logs por ETAPA
 export function agruparLogsPorEtapa(logs: LogPedido[]): Record<string, LogPedido[]> {
     const grupos: Record<string, LogPedido[]> = {}
 
@@ -189,6 +223,85 @@ export interface EtapaEstatistica {
     ordem: number
 }
 
+// Interface para alerta de atraso de cotação
+export interface CotacaoAlertInfo {
+    dias: number
+    nivel: 'atencao' | 'alerta' | 'critico'
+    cor: string
+    badgeBg: string
+    label: string
+}
+
+// Função para calcular atraso em dias sem cotação (3, 7 e 10+ dias)
+export function calcularAtrasoCotacao(order?: { logs?: LogPedido[]; data_pedido?: string } | null): CotacaoAlertInfo | null {
+    if (!order) return null
+
+    const etapaAtual = identificarEtapaAtual(order.logs || [])
+
+    // Se o pedido já avançou além da cotação ou foi finalizado/cancelado, não aplica alerta
+    if (etapaAtual === 'ETAPA 04' || etapaAtual === 'ETAPA 05' || etapaAtual === 'ETAPA 06' || etapaAtual === 'CANCELADO') {
+        return null
+    }
+
+    let timestampInicio = 0
+
+    if (order.logs && order.logs.length > 0) {
+        const logEtapa3 = order.logs.find(log => identificarEtapa(log) === 'ETAPA 03')
+        if (logEtapa3) {
+            timestampInicio = parseLogDate(logEtapa3.data)
+        } else {
+            const firstLog = order.logs[0]
+            if (firstLog) {
+                timestampInicio = parseLogDate(firstLog.data)
+            }
+        }
+    }
+
+    if (!timestampInicio && order.data_pedido) {
+        timestampInicio = parseLogDate(order.data_pedido)
+    }
+
+    if (!timestampInicio) return null
+
+    const agora = Date.now()
+    const diffMs = agora - timestampInicio
+    if (diffMs < 0) return null
+
+    const dias = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+
+    if (dias >= 10) {
+        return {
+            dias,
+            nivel: 'critico',
+            cor: 'text-red-600 border-red-500 bg-red-50 dark:bg-red-950/40',
+            badgeBg: 'bg-red-500 text-white',
+            label: `${dias}d sem cotação (Crítico)`
+        }
+    }
+
+    if (dias >= 7) {
+        return {
+            dias,
+            nivel: 'alerta',
+            cor: 'text-orange-600 border-orange-500 bg-orange-50 dark:bg-orange-950/40',
+            badgeBg: 'bg-orange-500 text-white',
+            label: `${dias}d sem cotação (Alerta)`
+        }
+    }
+
+    if (dias >= 3) {
+        return {
+            dias,
+            nivel: 'atencao',
+            cor: 'text-amber-600 border-amber-500 bg-amber-50 dark:bg-amber-950/40',
+            badgeBg: 'bg-amber-500 text-white',
+            label: `${dias}d sem cotação (Atenção)`
+        }
+    }
+
+    return null
+}
+
 // Função para calcular a diferença entre duas datas em horas/dias
 export function formatarTempo(ms: number): string {
     const horas = ms / (1000 * 60 * 60)
@@ -208,8 +321,8 @@ export function formatarTempo(ms: number): string {
 
 // Função para calcular o tempo gasto em uma etapa para um pedido
 export function calcularTempoEtapa(logs: LogPedido[], etapaNome: string, pedidoId?: string): number | null {
-    // ETAPAS 05 e CANCELADO não têm tempo médio
-    if (etapaNome === 'ETAPA 05' || etapaNome === 'CANCELADO') {
+    // ETAPAS 06 e CANCELADO não têm tempo médio (são etapas finais)
+    if (etapaNome === 'ETAPA 06' || etapaNome === 'CANCELADO') {
         return null
     }
 
@@ -217,20 +330,9 @@ export function calcularTempoEtapa(logs: LogPedido[], etapaNome: string, pedidoI
     const etapa = ETAPAS.find(e => e.nome === etapaNome)
     if (!etapa) return null
 
-    // Filtrar logs que pertencem a esta etapa (case insensitive)
+    // Filtrar logs que pertencem a esta etapa usando a identificação por log.etapa
     const logsEtapa = logs
-        .filter(log => {
-            if (!log.acao) return false
-            const acao = log.acao.toLowerCase()
-            return etapa.palavrasChave.some(p => {
-                const palavraLower = p.toLowerCase()
-                const match = acao.includes(palavraLower)
-                if (match && pedidoId) {
-                    console.log(`✅ Pedido ${pedidoId} - Match ETAPA ${etapaNome}: "${log.acao}" com palavra-chave "${p}"`)
-                }
-                return match
-            })
-        })
+        .filter(log => identificarEtapa(log) === etapaNome)
         .sort((a, b) => new Date(a.data).getTime() - new Date(b.data).getTime())
 
     // Se não tem logs na etapa, não entrou nela ainda
@@ -278,8 +380,7 @@ export function calcularTempoEtapa(logs: LogPedido[], etapaNome: string, pedidoI
             inicio: dataInicioStr,
             fim: dataFimStr,
             diferenca: formatarTempo(diferenca),
-            ms: diferenca,
-            palavrasChave: etapa.palavrasChave
+            ms: diferenca
         })
     }
 
@@ -288,14 +389,13 @@ export function calcularTempoEtapa(logs: LogPedido[], etapaNome: string, pedidoI
 
 // Função para calcular a média de tempo de uma etapa considerando todos os pedidos
 export function calcularMediaTempoEtapa(requisicao: Order[], etapaNome: string): string {
-    // ETAPAS 05 e CANCELADO não têm média
-    if (etapaNome === 'ETAPA 05' || etapaNome === 'CANCELADO') {
+    // ETAPAS 06 e CANCELADO não têm média
+    if (etapaNome === 'ETAPA 06' || etapaNome === 'CANCELADO') {
         return '-'
     }
 
     const tempos: number[] = []
     console.log(`\n🔍 Calculando média para ${etapaNome} com ${requisicao.length} requisição`)
-    console.log(`📝 Palavras-chave para ${etapaNome}:`, ETAPAS.find(e => e.nome === etapaNome)?.palavrasChave)
 
     requisicao.forEach((requisicao, index) => {
         if (!requisicao.logs) return
@@ -304,7 +404,7 @@ export function calcularMediaTempoEtapa(requisicao: Order[], etapaNome: string):
 
         // Mostrar logs para os primeiros 5 requisições para debug
         const mostrarLog = index < 5
-        const tempo = calcularTempoEtapa(logsArray, etapaNome, mostrarLog ? requisicao.id_Requisicao : undefined)
+        const tempo = calcularTempoEtapa(logsArray, etapaNome, mostrarLog && requisicao.id_Requisicao ? String(requisicao.id_Requisicao) : undefined)
 
         if (tempo !== null) {
             tempos.push(tempo)

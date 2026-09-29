@@ -33,6 +33,7 @@ import {
     DropdownMenuTrigger,
 } from "@/src/components/ui/dropdown-menu"
 import { clearCache } from '@/src/lib/api/cache';
+import { LoadingScreen } from "@/src/components/ui/LoadingScreen"
 
 const PAGE_SIZE = 20
 
@@ -211,15 +212,11 @@ export default function ProdutosPage() {
 
     if (loading && allProducts.length === 0) {
         return (
-            <div className="space-y-4 p-6">
-                <Skeleton className="h-8 w-48" />
-                <div className="flex gap-3">
-                    <Skeleton className="h-10 flex-1 max-w-sm" />
-                    <Skeleton className="h-10 w-44" />
-                    <Skeleton className="h-10 w-40" />
-                </div>
-                <Skeleton className="h-96 w-full" />
-            </div>
+            <LoadingScreen
+                variant="skeleton"
+                title="Carregando produtos..."
+                description="Buscando o catálogo de produtos e unidades de medida cadastradas."
+            />
         )
     }
 

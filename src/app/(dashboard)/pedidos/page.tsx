@@ -41,10 +41,11 @@ import {
     DropdownMenuTrigger,
 } from "@/src/components/ui/dropdown-menu"
 import { formatCurrency } from "@/src/lib/utils"
-import { ETAPAS, agruparLogsPorEtapa, identificarEtapaAtual, type EtapaEstatistica } from "@/src/lib/order-types"
+import { ETAPAS, agruparLogsPorEtapa, identificarEtapaAtual, calcularAtrasoCotacao, type EtapaEstatistica } from "@/src/lib/order-types"
 import { useAuth } from "@/src/hooks/useAuth"
 import { usePedidos } from "@/src/contexts/PedidosContext"
 import { getCostCenterName } from "@/src/lib/cost-centers-map"
+import { LoadingScreen } from "@/src/components/ui/LoadingScreen"
 
 const PAGE_SIZE = 20
 
@@ -89,6 +90,7 @@ const getEtapaColor = (etapa: string): string => {
         'ETAPA 03': 'border-yellow-500 text-yellow-600 bg-yellow-50 dark:bg-yellow-950/30',
         'ETAPA 04': 'border-purple-500 text-purple-600 bg-purple-50 dark:bg-purple-950/30',
         'ETAPA 05': 'border-orange-500 text-orange-600 bg-orange-50 dark:bg-orange-950/30',
+        'ETAPA 06': 'border-emerald-500 text-emerald-600 bg-emerald-50 dark:bg-emerald-950/30',
         'CANCELADO': 'border-red-500 text-red-600 bg-red-50 dark:bg-red-950/30'
     }
     return colors[etapa] || 'border-gray-500 text-gray-600 bg-gray-50 dark:bg-gray-950/30'
@@ -310,31 +312,15 @@ export default function PedidosPage() {
         )
     }
 
-    if (loading || allOrdersRaw.length === 0) {
+    if (loading) {
         return (
-            <div className="space-y-4 p-6">
-                <Skeleton className="h-8 w-48" />
-                <div className="flex gap-3">
-                    <Skeleton className="h-10 flex-1 max-w-sm" />
-                    <Skeleton className="h-10 w-40" />
-                    <Skeleton className="h-10 w-40" />
-                    <Skeleton className="h-10 w-40" />
-                    {userRole === 'CONSULTOR' && <Skeleton className="h-10 w-48" />}
-                </div>
-                <div className="bg-card rounded-xl border border-border p-8 text-center">
-                    <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto mb-4" />
-                    <p className="text-muted-foreground">Carregando todos os pedidos...</p>
-                    {loadingProgress.total > 0 && (
-                        <div className="mt-4">
-                            <div className="w-full bg-muted rounded-full h-2">
-                                <div className="bg-primary h-2 rounded-full transition-all duration-300" style={{ width: `${(loadingProgress.current / loadingProgress.total) * 100}%` }} />
-                            </div>
-                            <p className="text-xs text-muted-foreground mt-2">Carregando página {loadingProgress.current} de {loadingProgress.total}</p>
-                        </div>
-                    )}
-                </div>
-                {[...Array(5)].map((_, i) => (<Skeleton key={i} className="h-16 w-full" />))}
-            </div>
+            <LoadingScreen
+                variant="skeleton"
+                title="Carregando pedidos..."
+                description="Buscando e organizando a lista de requisições e ordens de compra."
+                currentProgress={loadingProgress.current}
+                totalProgress={loadingProgress.total}
+            />
         )
     }
 
@@ -461,11 +447,11 @@ export default function PedidosPage() {
 
             {/* Cards de Estatísticas de Etapas */}
             {etapasEstatisticas.length > 0 && (
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
                     {etapasEstatisticas
                         .sort((a, b) => a.ordem - b.ordem)
                         .map((etapaItem) => {
-                            const isFinal = etapaItem.nome === 'ETAPA 05' || etapaItem.nome === 'CANCELADO'
+                            const isFinal = etapaItem.nome === 'ETAPA 06' || etapaItem.nome === 'CANCELADO'
                             return (
                                 <motion.button
                                     key={etapaItem.nome}
@@ -578,6 +564,7 @@ export default function PedidosPage() {
                         <tbody>
                             {paginatedOrders.map((order, index) => {
                                 const etapaAtual = identificarEtapaAtual(order.logs || [])
+                                const atrasoCotacao = calcularAtrasoCotacao(order)
                                 const pedidoInfo = getPedidoInfo(order)
 
                                 if (isSepod) {
@@ -637,13 +624,25 @@ export default function PedidosPage() {
                                                 </Badge>
                                             </td>
                                             <td className="p-3 text-center align-top">
-                                                {etapaAtual ? (
-                                                    <Badge variant="outline" className={getEtapaColor(etapaAtual)}>
-                                                        {etapaAtual}
-                                                    </Badge>
-                                                ) : (
-                                                    <Badge variant="outline">---</Badge>
-                                                )}
+                                                <div className="flex flex-col items-center gap-1">
+                                                    {etapaAtual ? (
+                                                        <Badge variant="outline" className={getEtapaColor(etapaAtual)}>
+                                                            {etapaAtual}
+                                                        </Badge>
+                                                    ) : (
+                                                        <Badge variant="outline">---</Badge>
+                                                    )}
+                                                    {atrasoCotacao && (
+                                                        <Badge
+                                                            variant="outline"
+                                                            className={`text-[10px] px-1.5 py-0.5 flex items-center gap-1 cursor-help ${atrasoCotacao.cor}`}
+                                                            title={atrasoCotacao.label}
+                                                        >
+                                                            <Clock className="w-3 h-3" />
+                                                            <span>{atrasoCotacao.dias}d sem cotação</span>
+                                                        </Badge>
+                                                    )}
+                                                </div>
                                             </td>
                                             <td className="p-3 text-center align-top">
                                                 <Button
@@ -697,13 +696,25 @@ export default function PedidosPage() {
                                                 </Badge>
                                             </td>
                                             <td className="p-3 text-center hidden lg:table-cell align-top">
-                                                {etapaAtual ? (
-                                                    <Badge variant="outline" className={getEtapaColor(etapaAtual)}>
-                                                        {etapaAtual}
-                                                    </Badge>
-                                                ) : (
-                                                    <Badge variant="outline">---</Badge>
-                                                )}
+                                                <div className="flex flex-col items-center gap-1">
+                                                    {etapaAtual ? (
+                                                        <Badge variant="outline" className={getEtapaColor(etapaAtual)}>
+                                                            {etapaAtual}
+                                                        </Badge>
+                                                    ) : (
+                                                        <Badge variant="outline">---</Badge>
+                                                    )}
+                                                    {atrasoCotacao && (
+                                                        <Badge
+                                                            variant="outline"
+                                                            className={`text-[10px] px-1.5 py-0.5 flex items-center gap-1 cursor-help ${atrasoCotacao.cor}`}
+                                                            title={atrasoCotacao.label}
+                                                        >
+                                                            <Clock className="w-3 h-3" />
+                                                            <span>{atrasoCotacao.dias}d sem cotação</span>
+                                                        </Badge>
+                                                    )}
+                                                </div>
                                             </td>
                                             <td className="p-3 text-center align-top">
                                                 <Button
@@ -783,6 +794,21 @@ export default function PedidosPage() {
                             </TabsList>
 
                             <TabsContent value="detalhes" className="space-y-4 mt-4">
+                                {(() => {
+                                    const atrasoModal = calcularAtrasoCotacao(selectedOrder)
+                                    if (!atrasoModal) return null
+                                    return (
+                                        <div className={`p-3 rounded-lg border flex items-center justify-between text-xs font-medium ${atrasoModal.cor}`}>
+                                            <div className="flex items-center gap-2">
+                                                <Clock className="w-4 h-4 shrink-0" />
+                                                <span>Atenção: Este pedido está pendente de cotação há <strong>{atrasoModal.dias} dias</strong>.</span>
+                                            </div>
+                                            <Badge className={atrasoModal.badgeBg}>
+                                                {atrasoModal.nivel.toUpperCase()}
+                                            </Badge>
+                                        </div>
+                                    )
+                                })()}
                                 <div className="grid grid-cols-2 gap-4">
                                     <div><p className="text-xs text-muted-foreground">ID Requisição</p><p className="text-sm font-medium">{selectedOrder.id_requisicao}</p></div>
                                     <div><p className="text-xs text-muted-foreground">Status</p><Badge variant="outline" className={getStatusColor(selectedOrder.status_pedido || '')}>{selectedOrder.status_pedido}</Badge></div>
