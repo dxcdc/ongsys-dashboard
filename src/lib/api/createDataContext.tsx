@@ -82,7 +82,25 @@ export function createDataContext<T>(options: CreateDataContextOptions) {
 
             } catch (error: any) {
                 if (error.name !== 'AbortError') {
-                    setLoadError(error.message)
+                    const rawMsg = String(error?.message || '')
+                    let friendlyMsg = rawMsg
+                    if (rawMsg.includes('524') || rawMsg.includes('504') || rawMsg.includes('502') || rawMsg.includes('Timeout')) {
+                        friendlyMsg = 'O servidor da OngSys demorou para responder às requisições (Timeout Cloudflare 524). Tente recarregar novamente.'
+                    }
+
+                    // Tentar recuperar do localStorage se houver dados salvos
+                    try {
+                        const cached = localStorage.getItem(cacheKey)
+                        if (cached) {
+                            const parsed: CacheData<T> = JSON.parse(cached)
+                            if (parsed.data && parsed.data.length > 0) {
+                                setData(parsed.data)
+                                console.warn('⚠️ Restaurados dados do cache local após erro de rede:', friendlyMsg)
+                            }
+                        }
+                    } catch { }
+
+                    setLoadError(friendlyMsg)
                 } else {
                     hasLoadedRef.current = false
                 }

@@ -44,13 +44,14 @@ export const pedidosService = {
             console.log('🔄 Buscando todos os pedidos...')
             const startTime = Date.now()
 
+            let data: any[] = []
             try {
                 const primeiraPagina = await this.listar(filters, 1)
                 const totalPages = primeiraPagina.totalPages
                 const totalItems = primeiraPagina.totalItems
                 console.log(`📊 Total de páginas: ${totalPages} (${totalItems} pedidos)`)
 
-                const data: any[] = [...(primeiraPagina.data || [])]
+                data = [...(primeiraPagina.data || [])]
 
                 if (totalPages > 1) {
                     const BATCH_SIZE = 3
@@ -103,7 +104,13 @@ export const pedidosService = {
                 return deduplicatedData
             } catch (error) {
                 console.error('❌ Erro ao buscar pedidos:', error)
-                return []
+                // Se falhou por 524/rede, tenta resgatar cache existente
+                const fallbackCache = getCached<any[]>(cacheKey)
+                if (fallbackCache && fallbackCache.length > 0) {
+                    console.log(`⚠️ Retornando cache anterior (${fallbackCache.length} itens) após erro de comunicação com a OngSys`)
+                    return fallbackCache
+                }
+                return data || []
             } finally {
                 pendingRequests.delete(cacheKey)
             }

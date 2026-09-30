@@ -170,13 +170,49 @@ export function identificarEtapaAtual(logs: LogPedido[] = [], statusPedido?: str
     const statusNormalized = statusPedido ? String(statusPedido).trim() : ''
     const statusUpper = statusNormalized.toUpperCase()
 
-    // 1. Verificação direta de status do pedido vindo da API
+    // 1. Verificação direta de CANCELADO pelo status do pedido
     if (statusUpper.includes('CANCEL')) {
         return 'CANCELADO'
     }
-    if (statusUpper === 'ORDEM FINALIZADA' || statusUpper === 'FINALIZADO' || statusUpper === 'FINALIZADA') {
+
+    const agora = Date.now()
+
+    // 2. Mapear logs com timestamp e etapa validada
+    const logsValidos = (logs || [])
+        .map(log => ({
+            log,
+            timestamp: parseLogDate(log.data),
+            etapa: identificarEtapa(log)
+        }))
+        .filter(item => item.timestamp > 0 && item.timestamp <= agora && item.etapa !== null)
+        .sort((a, b) => a.timestamp - b.timestamp) // Ordem cronológica: antigo -> recente
+
+    // 3. Se houver qualquer registro de cancelamento no histórico, o status é CANCELADO
+    const cancelado = logsValidos.find(item => item.etapa === 'CANCELADO') ||
+        (logs || []).find(l => {
+            const e = identificarEtapa(l)
+            return e === 'CANCELADO'
+        })
+    if (cancelado) return 'CANCELADO'
+
+    // 4. VERIFICAÇÃO DE FINALIZAÇÃO (ETAPA 06) PRIORITÁRIA
+    // Se o status do pedido indica finalização OU se houver qualquer log da ETAPA 06
+    const statusIndicaFinalizado = (
+        statusUpper === 'ORDEM FINALIZADA' ||
+        statusUpper.includes('FINALIZAD') ||
+        statusUpper.includes('CONCLUID') ||
+        statusUpper.includes('CONCLUÍD') ||
+        statusUpper.includes('ENTREGUE') ||
+        statusUpper.includes('ENCERRAD')
+    )
+    const temLogFinalizado = logsValidos.some(item => item.etapa === 'ETAPA 06') ||
+        (logs || []).some(log => identificarEtapa(log) === 'ETAPA 06')
+
+    if (statusIndicaFinalizado || temLogFinalizado) {
         return 'ETAPA 06'
     }
+
+    // 5. Verificação de status para ETAPA 05 (somente se NÃO houver log da ETAPA 06)
     if (
         statusUpper === 'ORDEM GERADA' ||
         statusUpper.includes('ENVIADO') ||
@@ -186,22 +222,6 @@ export function identificarEtapaAtual(logs: LogPedido[] = [], statusPedido?: str
     ) {
         return 'ETAPA 05'
     }
-
-    if (!logs || logs.length === 0) {
-        return null
-    }
-
-    const agora = Date.now()
-
-    // 2. Mapear logs com timestamp e etapa validada
-    const logsValidos = logs
-        .map(log => ({
-            log,
-            timestamp: parseLogDate(log.data),
-            etapa: identificarEtapa(log)
-        }))
-        .filter(item => item.timestamp > 0 && item.timestamp <= agora && item.etapa !== null)
-        .sort((a, b) => a.timestamp - b.timestamp) // Ordem cronológica: antigo -> recente
 
     if (logsValidos.length === 0) {
         // Fallback caso as datas venham sem formato padrão
@@ -215,16 +235,7 @@ export function identificarEtapaAtual(logs: LogPedido[] = [], statusPedido?: str
         return null
     }
 
-    // 3. Se houver qualquer registro de cancelamento no histórico, o status é CANCELADO
-    const cancelado = logsValidos.find(item => item.etapa === 'CANCELADO')
-    if (cancelado) return 'CANCELADO'
-
-    // 4. Se o pedido já atingiu a ETAPA 06 (Finalização/Encerramento), permanece na ETAPA 06
-    const finalizado = logsValidos.find(item => item.etapa === 'ETAPA 06')
-    if (finalizado) return 'ETAPA 06'
-
-    // 5. Se o último log for da ETAPA 04 (Aprovação da cotação), a cotação foi aprovada
-    // e o pedido transicionou para a ETAPA 05 (Lançamento / Processamento / Ordem Gerada)
+    // 6. Se o último log for da ETAPA 04 (Aprovação da cotação), transicionou para a ETAPA 05
     const ultimoLog = logsValidos[logsValidos.length - 1]
     if (ultimoLog.etapa === 'ETAPA 04') {
         return 'ETAPA 05'

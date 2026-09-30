@@ -67,12 +67,13 @@ export async function apiGet<T>(
         console.log(`📥 Status: ${response.status}`)
 
         if (!response.ok) {
-            if (response.status === 524 || response.status === 504) {
-                console.warn(`⚠️ Gateway timeout em ${endpoint} página ${params.pageNumber}`)
+            if (response.status === 524 || response.status === 504 || response.status === 502 || response.status === 503) {
+                console.warn(`⚠️ Gateway timeout/error (${response.status}) em ${endpoint} página ${params.pageNumber}`)
                 if (attempt < MAX_RETRIES) {
-                    await new Promise(r => setTimeout(r, 2000 * attempt))
+                    await new Promise(r => setTimeout(r, 1500 * attempt))
                     return apiGet<T>(endpoint, params, attempt + 1)
                 }
+                console.warn(`⚠️ Retornando resultado parcial para página ${params.pageNumber} devido a erro gateway ${response.status}`)
                 return { data: [], totalPages: 1, currentPage: params.pageNumber || 1, totalItems: 0 }
             }
             const errorText = await response.text()
@@ -91,7 +92,7 @@ export async function apiGet<T>(
             console.warn(`⚠️ Timeout (${TIMEOUT_MS / 1000}s): ${endpoint} página ${params.pageNumber}`)
             if (attempt < MAX_RETRIES) {
                 console.log(`🔁 Retry ${attempt}/${MAX_RETRIES - 1}...`)
-                await new Promise(r => setTimeout(r, 2000 * attempt))
+                await new Promise(r => setTimeout(r, 1500 * attempt))
                 return apiGet<T>(endpoint, params, attempt + 1)
             }
             console.error(`❌ Página ${params.pageNumber} falhou após ${MAX_RETRIES} tentativas`)

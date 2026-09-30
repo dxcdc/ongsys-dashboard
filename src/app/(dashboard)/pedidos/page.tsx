@@ -233,6 +233,21 @@ export default function PedidosPage() {
             })
         }
 
+        // Ordenar os pedidos filtrados por ID (do menor para o maior)
+        filtered.sort((a, b) => {
+            const idA = a.id_requisicao || a.id_pedido || a.id
+            const idB = b.id_requisicao || b.id_pedido || b.id
+
+            const numA = parseInt(String(idA || '0').replace(/\D/g, '')) || 0
+            const numB = parseInt(String(idB || '0').replace(/\D/g, '')) || 0
+
+            if (numA !== numB) {
+                return numA - numB
+            }
+
+            return String(idA || '').localeCompare(String(idB || ''), undefined, { numeric: true })
+        })
+
         setFilteredOrders(filtered)
         setTotalItems(filtered.length)
         setTotalPages(Math.ceil(filtered.length / PAGE_SIZE))

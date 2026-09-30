@@ -41,8 +41,11 @@ export async function GET() {
             valor_total: p.valorTotal || 0
         }))
         return NextResponse.json({ data, total: data.length })
-    } catch (error) {
+    } catch (error: any) {
         console.error('Erro ao buscar todos os pedidos:', error)
-        return NextResponse.json({ data: [], total: 0 }, { status: 500 })
+        return NextResponse.json(
+            { data: [], total: 0, error: error?.message || 'Servidor OngSys demorou a responder (Timeout)' },
+            { status: 200 }
+        )
     }
 }
