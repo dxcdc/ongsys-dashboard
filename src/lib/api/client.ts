@@ -67,6 +67,10 @@ export async function apiGet<T>(
         console.log(`📥 Status: ${response.status}`)
 
         if (!response.ok) {
+            if (response.status === 422) {
+                console.info(`ℹ️ Retorno 422 (sem registros ou página vazia) em ${endpoint} página ${params.pageNumber || 1}`)
+                return { data: [], totalPages: 1, currentPage: params.pageNumber || 1, totalItems: 0 }
+            }
             if (response.status === 524 || response.status === 504 || response.status === 502 || response.status === 503) {
                 console.warn(`⚠️ Gateway timeout/error (${response.status}) em ${endpoint} página ${params.pageNumber}`)
                 if (attempt < MAX_RETRIES) {

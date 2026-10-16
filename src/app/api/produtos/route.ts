@@ -6,7 +6,7 @@ export async function GET(request: NextRequest) {
         const searchParams = request.nextUrl.searchParams;
         const page = parseInt(searchParams.get('page') || '1');
 
-        const result = await produtosService.listar({}, page);
+        const result = await produtosService.listar(page);
 
         return NextResponse.json(result);
     } catch (error) {

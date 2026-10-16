@@ -1,18 +1,25 @@
 // src/types/fornecedor.ts
 export interface Fornecedor {
-    id: number
-    nome: string
-    documento: string  // CNPJ ou CPF
-    tipo_pessoa?: 'FISICA' | 'JURIDICA'
+    id: number | string
+    code?: string
+    nome?: string
+    name?: string
+    documento?: string
+    document?: string
+    tipo_pessoa?: 'FISICA' | 'JURIDICA' | 'PJ' | 'PF'
+    personType?: 'PJ' | 'PF'
     email?: string
     telefone?: string
+    phone?: string
     celular?: string
-    endereco?: string
+    endereco?: any
     numero?: string
     complemento?: string
     bairro?: string
     cidade?: string
+    city?: string
     estado?: string
+    state?: string
     cep?: string
     contato_nome?: string
     contato_email?: string

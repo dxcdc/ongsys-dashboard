@@ -1,16 +1,21 @@
 export interface Order {
-    id: number
+    id: number | string
     id_requisicao: string
     id_pedido?: string
     titulo: string
     status_pedido: string
+    etapa?: string
     fornecedor_nome: string
     fornecedor_documento?: string
     requisitante?: string
-    comprador?: string  
+    solicitante?: string
+    comprador?: string
+    responsavel_cotacao?: string
     data_pedido: string
-    dataEntregaEstimada?: string  
+    dataEntregaEstimada?: string
     tipo_pedido: string
+    tipo_requisicao?: string
+    subprojeto?: string
     valor_total: number
     local_entrega?: any
     itens_pedido?: any[]
@@ -19,6 +24,13 @@ export interface Order {
     justificativa_compra?: string
     fonte_pagadora?: string
     conta_plano_financeiro?: string
+    cancelamento?: {
+        data?: string
+        usuario?: string
+        justificativa?: string
+    } | null
+    aprovacoes?: any[]
+    aprovacoesCotacao?: any[]
 }
 
 export type OrderStatus = 'Ordem finalizada' | 'Aguardando aprovação' | 'Em andamento' | 'Cancelado' | 'Rascunho'

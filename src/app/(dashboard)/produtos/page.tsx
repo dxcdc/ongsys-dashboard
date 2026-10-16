@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { motion } from "framer-motion"
 import {
     Search,
@@ -16,7 +16,8 @@ import {
     Package2,
     Building2,
     CreditCard,
-    FileText
+    FileText,
+    RotateCcw
 } from "lucide-react"
 import { Input } from "@/src/components/ui/input"
 import { Badge } from "@/src/components/ui/badge"
@@ -33,6 +34,7 @@ import {
     DropdownMenuTrigger,
 } from "@/src/components/ui/dropdown-menu"
 import { LoadingScreen } from "@/src/components/ui/LoadingScreen"
+import { useProdutos } from "@/src/contexts/ProdutosContext"
 
 const PAGE_SIZE = 20
 
@@ -57,129 +59,76 @@ const STATUS_OPTIONS = [
 ]
 
 export default function ProdutosPage() {
-    const [allProducts, setAllProducts] = useState<Product[]>([])
-    const [filteredProducts, setFilteredProducts] = useState<Product[]>([])
-    const [loading, setLoading] = useState(true)
+    const { data: allProductsRaw, loading, reload, loadError } = useProdutos()
     const [search, setSearch] = useState("")
     const [categoria, setCategoria] = useState("Todos")
     const [status, setStatus] = useState("Todos")
     const [page, setPage] = useState(1)
     const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
     const [exporting, setExporting] = useState(false)
-    const [categorias, setCategorias] = useState<string[]>(['Todos'])
 
-    const fetchAllProducts = async () => {
-        setLoading(true)
-        try {
-            let allData: Product[] = []
-            let currentPage = 1
-            let hasMore = true
-            let totalRecords = 0
+    // Formatar e normalizar produtos
+    const allProducts: Product[] = useMemo(() => {
+        return (allProductsRaw as any[] || []).map((item: any) => ({
+            id: String(item.id),
+            codigo: String(item.codigo || item.id),
+            nome: item.nome || item.nomeProduto || 'Produto sem nome',
+            categoria: item.categoria || item.grupo || 'Sem categoria',
+            unidadeMedida: item.unidadeMedida || item.unidade_medida || 'Unidade',
+            status: item.status === 'inativo' ? 'inativo' : 'ativo',
+            descricao: item.descricao || item.descricaoProduto || '',
+            origem: item.origem || 'Não informada',
+            contaPadrao: item.contaPadrao || item.contaPadraoPlanoFinanceiro || '',
+            fabricante: item.fabricante || '',
+            valorCustoBase: parseFloat(item.valorCustoBase || item.preco_unitario) || 0
+        }))
+    }, [allProductsRaw])
 
-            while (hasMore) {
-                const params = new URLSearchParams()
-                params.append('page', currentPage.toString())
+    // Extrair lista de categorias únicas
+    const categorias = useMemo(() => {
+        const unique = new Set(allProducts.map(p => p.categoria).filter(Boolean))
+        return ['Todos', ...Array.from(unique).sort()]
+    }, [allProducts])
 
-                console.log(`📄 Buscando página ${currentPage}...`)
-                const response = await fetch(`/api/produtos?${params.toString()}`)
+    // Filtrar em memória
+    const filteredProducts: Product[] = useMemo(() => {
+        let filtered = allProducts
 
-                if (!response.ok) {
-                    throw new Error(`Erro ao buscar página ${currentPage}`)
-                }
-
-                const data = await response.json()
-
-                if (currentPage === 1) {
-                    totalRecords = data.totalItems || data.totalRecords || 0
-                    console.log(`📊 Total de registros na API: ${totalRecords}`)
-                }
-
-                const produtosFormatados: Product[] = (data.data || []).map((item: any) => ({
-                    id: String(item.id),
-                    codigo: String(item.id),
-                    nome: item.nomeProduto || 'Produto sem nome',
-                    categoria: item.grupo || 'Sem categoria',
-                    unidadeMedida: item.unidadeMedida || 'Unidade',
-                    status: item.status === 'inativo' ? 'inativo' : 'ativo',
-                    descricao: item.descricaoProduto || '',
-                    origem: item.origem || 'Não informada',
-                    contaPadrao: item.contaPadraoPlanoFinanceiro || '',
-                    fabricante: item.fabricante || '',
-                    valorCustoBase: parseFloat(item.valorCustoBase) || 0
-                }))
-
-                allData = [...allData, ...produtosFormatados]
-
-                console.log(`📄 Página ${currentPage}: +${produtosFormatados.length} produtos (total: ${allData.length})`)
-
-                const totalPages = Math.ceil(totalRecords / 100)
-                hasMore = currentPage < totalPages
-                currentPage++
-
-                if (hasMore) {
-                    await new Promise(resolve => setTimeout(resolve, 100))
-                }
-            }
-
-            console.log(`✅ Total de produtos carregados: ${allData.length}`)
-            setAllProducts(allData)
-
-            const uniqueCategorias = ['Todos', ...new Set(allData.map(p => p.categoria).filter(Boolean))]
-            setCategorias(uniqueCategorias)
-
-            applyFilters(allData, search, categoria, status)
-
-        } catch (error) {
-            console.error('Erro ao buscar produtos:', error)
-        } finally {
-            setLoading(false)
-        }
-    }
-
-    const applyFilters = (products: Product[], searchTerm: string, cat: string, stat: string) => {
-        let filtered = [...products]
-
-        if (searchTerm) {
-            const searchLower = searchTerm.toLowerCase()
+        if (search.trim()) {
+            const searchLower = search.toLowerCase().trim()
             filtered = filtered.filter(p =>
-                p.nome.toLowerCase().includes(searchLower) ||
-                p.codigo.toLowerCase().includes(searchLower) ||
-                p.categoria.toLowerCase().includes(searchLower)
+                (p.nome || '').toLowerCase().includes(searchLower) ||
+                (p.codigo || '').toLowerCase().includes(searchLower) ||
+                (p.categoria || '').toLowerCase().includes(searchLower)
             )
         }
 
-        if (cat !== 'Todos') {
-            filtered = filtered.filter(p => p.categoria === cat)
+        if (categoria !== 'Todos') {
+            filtered = filtered.filter(p => p.categoria === categoria)
         }
 
-        if (stat !== 'Todos') {
-            filtered = filtered.filter(p => p.status === stat)
+        if (status !== 'Todos') {
+            filtered = filtered.filter(p => p.status === status)
         }
 
-        setFilteredProducts(filtered)
+        return filtered
+    }, [allProducts, search, categoria, status])
+
+    // Resetar página quando filtros mudarem
+    useEffect(() => {
         setPage(1)
-    }
+    }, [search, categoria, status])
 
-    // Carregar todos os produtos na montagem do componente
-    useEffect(() => {
-        fetchAllProducts()
-    }, [])
-
-    // Aplicar filtros quando os critérios mudarem
-    useEffect(() => {
-        if (allProducts.length > 0) {
-            applyFilters(allProducts, search, categoria, status)
-        }
-    }, [search, categoria, status, allProducts])
-
-    // Paginação dos dados filtrados
-    const paginatedProducts = filteredProducts.slice(
-        (page - 1) * PAGE_SIZE,
-        page * PAGE_SIZE
-    )
+    // Paginação dos dados filtrados (em memória)
+    const paginatedProducts = useMemo(() => {
+        return filteredProducts.slice(
+            (page - 1) * PAGE_SIZE,
+            page * PAGE_SIZE
+        )
+    }, [filteredProducts, page])
 
     const totalItems = filteredProducts.length
-    const totalPages = Math.ceil(totalItems / PAGE_SIZE)
+    const totalPages = Math.ceil(totalItems / PAGE_SIZE) || 1
 
     // Função para obter o ícone do status
     const getStatusIcon = (statusValue: string) => {
@@ -298,6 +247,16 @@ export default function ProdutosPage() {
                         ))}
                     </SelectContent>
                 </Select>
+
+                <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={() => reload()}
+                    disabled={loading}
+                    title="Recarregar produtos da OngSys"
+                >
+                    <RotateCcw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                </Button>
             </div>
 
             {/* Indicadores de filtros ativos */}

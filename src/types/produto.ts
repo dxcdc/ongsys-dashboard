@@ -1,9 +1,16 @@
 // src/types/produto.ts
 export interface Produto {
-    id: number
+    id: number | string
     codigo: string
     nome: string
+    categoria?: string
+    unidadeMedida?: string
+    status?: string
     descricao?: string
+    origem?: string
+    contaPadrao?: string
+    fabricante?: string
+    valorCustoBase?: number
     grupo?: string
     unidade_medida?: string
     preco_unitario?: number

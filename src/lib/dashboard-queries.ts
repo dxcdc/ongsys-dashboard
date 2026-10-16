@@ -24,6 +24,9 @@ function extractValueFromPedido(pedido: any): number {
   if (pedido.valor_total && typeof pedido.valor_total === 'number') {
     return pedido.valor_total
   }
+  if (pedido.valorGlobal && typeof pedido.valorGlobal === 'number') {
+    return pedido.valorGlobal
+  }
   if (pedido.total && typeof pedido.total === 'number') {
     return pedido.total
   }
@@ -163,12 +166,14 @@ export async function getDashboardSummaryFromAPI(filters?: DateFilter): Promise<
     }
 
     // Separar por tipo
-    const pedidosProduto = pedidosFiltrados.filter((p: any) =>
-      p.tipoPedido?.toLowerCase() === 'produto'
-    )
-    const pedidosServico = pedidosFiltrados.filter((p: any) =>
-      p.tipoPedido?.toLowerCase() === 'serviço' || p.tipoPedido?.toLowerCase() === 'servico'
-    )
+    const pedidosProduto = pedidosFiltrados.filter((p: any) => {
+      const tipo = String(p.tipoPedido || p.tipoRequisicao || p.tipo_pedido || '').toLowerCase()
+      return tipo === 'produto'
+    })
+    const pedidosServico = pedidosFiltrados.filter((p: any) => {
+      const tipo = String(p.tipoPedido || p.tipoRequisicao || p.tipo_pedido || '').toLowerCase()
+      return tipo === 'serviço' || tipo === 'servico'
+    })
 
     // Calcular valores
     const totalProductOrders = pedidosProduto.length

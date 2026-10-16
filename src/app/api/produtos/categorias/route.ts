@@ -3,7 +3,7 @@ import { produtosService } from '@/src/lib/api/services';
 
 export async function GET() {
     try {
-        const allProducts = await produtosService.listarTodos({});
+        const allProducts = await produtosService.listarTodos();
 
         const categorias = [...new Set(allProducts.map((p: any) => p.grupo || 'Sem categoria').filter(Boolean))];
 

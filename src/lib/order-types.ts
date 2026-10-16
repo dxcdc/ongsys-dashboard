@@ -42,18 +42,24 @@ export interface Order {
     id?: number | string
     id_Requisicao?: string | number
     id_requisicao?: string | number
+    id_pedido?: string | number
     titulo?: string
     status_pedido?: string
+    statusPedido?: string
+    etapa?: string
     fornecedor_id?: string
     fornecedor_nome?: string
     fornecedor_documento?: string
     requisitante?: string
+    solicitante?: string
     comprador?: string
+    responsavel_cotacao?: string
     demandante?: string
     data_pedido?: string
     dataEntregaEstimada?: string
     numero_referencia?: string
     tipo_pedido?: string
+    tipo_requisicao?: string
     fonte_pagadora?: string
     conta_plano_financeiro?: string
     subprojeto?: string
@@ -65,6 +71,13 @@ export interface Order {
     local_entrega?: LocalEntrega
     itens_pedido?: ItemPedido[]
     logs?: LogPedido[]
+    cancelamento?: {
+        data?: string
+        usuario?: string
+        justificativa?: string
+    } | null
+    aprovacoes?: any[]
+    aprovacoesCotacao?: any[]
 }
 
 export interface OrdersResponse {
@@ -86,25 +99,25 @@ export const ETAPAS: EtapaInfo[] = [
         nome: 'ETAPA 01',
         descricao: 'Criação da Requisição',
         ordem: 1,
-        oculta: true
+        oculta: false
     },
     {
         nome: 'ETAPA 02',
         descricao: 'Aprovação da Requisição',
         ordem: 2,
-        oculta: true
+        oculta: false
     },
     {
         nome: 'ETAPA 03',
         descricao: 'Cotação',
         ordem: 3,
-        oculta: true
+        oculta: false
     },
     {
         nome: 'ETAPA 04',
         descricao: 'Aprovação da Cotação',
         ordem: 4,
-        oculta: true
+        oculta: false
     },
     {
         nome: 'ETAPA 05',
@@ -120,9 +133,9 @@ export const ETAPAS: EtapaInfo[] = [
     },
     {
         nome: 'CANCELADO',
-        descricao: 'Pedidos Cancelados',
+        descricao: 'Cancelados',
         ordem: 7,
-        oculta: true
+        oculta: false
     }
 ]
 
@@ -165,19 +178,53 @@ export function identificarEtapa(log: LogPedido): string | null {
     return null
 }
 
-// Função para identificar a ETAPA ATUAL de um pedido comparando logs cronologicamente até a data/hora atual e o status do pedido
-export function identificarEtapaAtual(logs: LogPedido[] = [], statusPedido?: string): string | null {
-    const statusNormalized = statusPedido ? String(statusPedido).trim() : ''
+// Função para identificar a ETAPA ATUAL de um pedido comparando cancelamento, etapa pré-definida, logs cronologicamente e status
+export function identificarEtapaAtual(
+    logsOrOrder: LogPedido[] | Order | any = [],
+    statusPedido?: string,
+    cancelamento?: any,
+    etapaPredefinida?: string
+): string | null {
+    let logs: LogPedido[] = []
+    let status = statusPedido
+    let cancel = cancelamento
+    let etapaFixa = etapaPredefinida
+
+    if (logsOrOrder && !Array.isArray(logsOrOrder)) {
+        const o = logsOrOrder as any
+        logs = o.logs || []
+        status = status || o.status_pedido || o.statusPedido || o.status
+        cancel = cancel ?? o.cancelamento
+        etapaFixa = etapaFixa || o.etapa
+    } else {
+        logs = logsOrOrder || []
+    }
+
+    // 1. Verificação de CANCELADO por objeto de cancelamento
+    if (cancel !== null && cancel !== undefined) {
+        return 'CANCELADO'
+    }
+
+    const statusNormalized = status ? String(status).trim() : ''
     const statusUpper = statusNormalized.toUpperCase()
 
-    // 1. Verificação direta de CANCELADO pelo status do pedido
+    // 2. Verificação direta de CANCELADO pelo status do pedido
     if (statusUpper.includes('CANCEL')) {
         return 'CANCELADO'
     }
 
+    // 3. Se tiver etapa fixa pré-definida de requisição (ex: ETAPA 01 a 04)
+    if (etapaFixa) {
+        const norm = normalizarNomeEtapa(etapaFixa)
+        if (norm === 'CANCELADO') return 'CANCELADO'
+        if (norm === 'ETAPA 01' || norm === 'ETAPA 02' || norm === 'ETAPA 03' || norm === 'ETAPA 04') {
+            return norm
+        }
+    }
+
     const agora = Date.now()
 
-    // 2. Mapear logs com timestamp e etapa validada
+    // 4. Mapear logs com timestamp e etapa validada
     const logsValidos = (logs || [])
         .map(log => ({
             log,
@@ -187,7 +234,7 @@ export function identificarEtapaAtual(logs: LogPedido[] = [], statusPedido?: str
         .filter(item => item.timestamp > 0 && item.timestamp <= agora && item.etapa !== null)
         .sort((a, b) => a.timestamp - b.timestamp) // Ordem cronológica: antigo -> recente
 
-    // 3. Se houver qualquer registro de cancelamento no histórico, o status é CANCELADO
+    // 5. Se houver qualquer registro de cancelamento no histórico, o status é CANCELADO
     const cancelado = logsValidos.find(item => item.etapa === 'CANCELADO') ||
         (logs || []).find(l => {
             const e = identificarEtapa(l)
@@ -195,7 +242,7 @@ export function identificarEtapaAtual(logs: LogPedido[] = [], statusPedido?: str
         })
     if (cancelado) return 'CANCELADO'
 
-    // 4. VERIFICAÇÃO DE FINALIZAÇÃO (ETAPA 06) PRIORITÁRIA
+    // 6. VERIFICAÇÃO DE FINALIZAÇÃO (ETAPA 06) PRIORITÁRIA
     // Se o status do pedido indica finalização OU se houver qualquer log da ETAPA 06
     const statusIndicaFinalizado = (
         statusUpper === 'ORDEM FINALIZADA' ||
@@ -212,7 +259,7 @@ export function identificarEtapaAtual(logs: LogPedido[] = [], statusPedido?: str
         return 'ETAPA 06'
     }
 
-    // 5. Verificação de status para ETAPA 05 (somente se NÃO houver log da ETAPA 06)
+    // 7. Verificação de status para ETAPA 05 (somente se NÃO houver log da ETAPA 06)
     if (
         statusUpper === 'ORDEM GERADA' ||
         statusUpper.includes('ENVIADO') ||
@@ -232,10 +279,14 @@ export function identificarEtapaAtual(logs: LogPedido[] = [], statusPedido?: str
                 return etapa
             }
         }
+        if (etapaFixa) {
+            const norm = normalizarNomeEtapa(etapaFixa)
+            if (norm) return norm
+        }
         return null
     }
 
-    // 6. Se o último log for da ETAPA 04 (Aprovação da cotação), transicionou para a ETAPA 05
+    // 8. Se o último log for da ETAPA 04 (Aprovação da cotação), transicionou para a ETAPA 05
     const ultimoLog = logsValidos[logsValidos.length - 1]
     if (ultimoLog.etapa === 'ETAPA 04') {
         return 'ETAPA 05'

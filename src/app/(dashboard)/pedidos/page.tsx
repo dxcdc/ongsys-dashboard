@@ -18,7 +18,8 @@ import {
     Layers,
     Flag,
     Loader2,
-    Building2
+    Building2,
+    RotateCcw
 } from "lucide-react"
 import { Input } from "@/src/components/ui/input"
 import { Button } from "@/src/components/ui/button"
@@ -50,18 +51,23 @@ import { LoadingScreen } from "@/src/components/ui/LoadingScreen"
 const PAGE_SIZE = 20
 
 interface Order {
-    id: number
+    id: number | string
     id_requisicao: string
     id_pedido?: string
     titulo: string
     status_pedido: string
+    etapa?: string
     fornecedor_nome: string
     fornecedor_documento?: string
     requisitante?: string
+    solicitante?: string
     comprador?: string
+    responsavel_cotacao?: string
     data_pedido: string
     dataEntregaEstimada?: string
     tipo_pedido: string
+    tipo_requisicao?: string
+    subprojeto?: string
     valor_total: number
     local_entrega?: any
     itens_pedido?: any[]
@@ -70,6 +76,13 @@ interface Order {
     justificativa_compra?: string
     fonte_pagadora?: string
     conta_plano_financeiro?: string
+    cancelamento?: {
+        data?: string
+        usuario?: string
+        justificativa?: string
+    } | null
+    aprovacoes?: any[]
+    aprovacoesCotacao?: any[]
 }
 
 const getStatusColor = (status: string): string => {
@@ -228,7 +241,7 @@ export default function PedidosPage() {
 
         if (etapa !== 'Todas') {
             filtered = filtered.filter((order: Order) => {
-                const etapaAtual = identificarEtapaAtual(order.logs || [], order.status_pedido)
+                const etapaAtual = identificarEtapaAtual(order)
                 return etapaAtual === etapa
             })
         }
@@ -274,7 +287,7 @@ export default function PedidosPage() {
             ordem: etapa.ordem
         }))
         filteredOrders.forEach((order: Order) => {
-            const etapaAtual = identificarEtapaAtual(order.logs || [], order.status_pedido)
+            const etapaAtual = identificarEtapaAtual(order)
             if (etapaAtual) {
                 const etapaInfo = estatisticas.find(e => e.nome === etapaAtual)
                 if (etapaInfo) etapaInfo.quantidade++
@@ -369,31 +382,43 @@ export default function PedidosPage() {
                     </p>
                 </div>
 
-                <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                        <Button variant="outline" disabled={exporting}>
-                            <Download className="w-4 h-4 mr-2" />
-                            {exporting ? 'Exportando...' : 'Exportar'}
-                        </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-56">
-                        <DropdownMenuLabel>Opções de Exportação</DropdownMenuLabel>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem onClick={() => handleExport('pagina')}>
-                            <Filter className="w-4 h-4 mr-2" />
-                            Página atual ({paginatedOrders.length} itens)
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => handleExport('filtro')}>
-                            <Filter className="w-4 h-4 mr-2" />
-                            Filtro atual ({totalItems} itens)
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem onClick={() => handleExport('tudo')}>
-                            <Download className="w-4 h-4 mr-2" />
-                            Todos os pedidos ({allOrdersRaw.length} itens)
-                        </DropdownMenuItem>
-                    </DropdownMenuContent>
-                </DropdownMenu>
+                <div className="flex items-center gap-2">
+                    <Button
+                        variant="outline"
+                        onClick={() => reload()}
+                        disabled={loading}
+                        title="Recarregar dados da API OngSys"
+                    >
+                        <RotateCcw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                        <span className="hidden sm:inline ml-2">Recarregar</span>
+                    </Button>
+
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button variant="outline" disabled={exporting}>
+                                <Download className="w-4 h-4 mr-2" />
+                                {exporting ? 'Exportando...' : 'Exportar'}
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-56">
+                            <DropdownMenuLabel>Opções de Exportação</DropdownMenuLabel>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={() => handleExport('pagina')}>
+                                <Filter className="w-4 h-4 mr-2" />
+                                Página atual ({paginatedOrders.length} itens)
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleExport('filtro')}>
+                                <Filter className="w-4 h-4 mr-2" />
+                                Filtro atual ({totalItems} itens)
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={() => handleExport('tudo')}>
+                                <Download className="w-4 h-4 mr-2" />
+                                Todos os pedidos ({allOrdersRaw.length} itens)
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                </div>
             </div>
 
             {/* Filtros */}
@@ -477,7 +502,7 @@ export default function PedidosPage() {
 
             {/* Cards de Estatísticas de Etapas */}
             {etapasEstatisticas.length > 0 && (
-                <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-2 max-w-xl gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-3">
                     {etapasEstatisticas
                         .sort((a, b) => a.ordem - b.ordem)
                         .map((etapaItem) => {
@@ -593,7 +618,7 @@ export default function PedidosPage() {
                         </thead>
                         <tbody>
                             {paginatedOrders.map((order, index) => {
-                                const etapaAtual = identificarEtapaAtual(order.logs || [], order.status_pedido)
+                                const etapaAtual = identificarEtapaAtual(order)
                                 const atrasoCotacao = calcularAtrasoCotacao(order)
                                 const pedidoInfo = getPedidoInfo(order)
 
@@ -816,14 +841,34 @@ export default function PedidosPage() {
                     </DialogHeader>
                     {selectedOrder && (
                         <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-4">
-                            <TabsList className="grid w-full grid-cols-4">
+                            <TabsList className="grid w-full grid-cols-5">
                                 <TabsTrigger value="detalhes">Detalhes</TabsTrigger>
                                 <TabsTrigger value="itens">Itens</TabsTrigger>
+                                <TabsTrigger value="aprovacoes">Aprovações</TabsTrigger>
                                 <TabsTrigger value="entrega">Entrega</TabsTrigger>
                                 <TabsTrigger value="timeline">Linha do Tempo</TabsTrigger>
                             </TabsList>
 
                             <TabsContent value="detalhes" className="space-y-4 mt-4">
+                                {selectedOrder.cancelamento && (
+                                    <div className="p-3.5 rounded-lg border border-red-500/40 bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 space-y-1.5">
+                                        <div className="flex items-center gap-2 font-semibold text-sm">
+                                            <XCircle className="w-4 h-4 shrink-0 text-red-600" />
+                                            <span>Requisição Cancelada</span>
+                                        </div>
+                                        <p className="text-xs">
+                                            <strong>Cancelado por:</strong> {selectedOrder.cancelamento.usuario || 'Não informado'}
+                                            {selectedOrder.cancelamento.data && (
+                                                <span> em {new Date(selectedOrder.cancelamento.data).toLocaleString("pt-BR")}</span>
+                                            )}
+                                        </p>
+                                        {selectedOrder.cancelamento.justificativa && (
+                                            <p className="text-xs">
+                                                <strong>Justificativa:</strong> {selectedOrder.cancelamento.justificativa}
+                                            </p>
+                                        )}
+                                    </div>
+                                )}
                                 {(() => {
                                     const atrasoModal = calcularAtrasoCotacao(selectedOrder)
                                     if (!atrasoModal) return null
@@ -903,6 +948,65 @@ export default function PedidosPage() {
                                 ) : <p className="text-center py-4">Nenhum item encontrado</p>}
                             </TabsContent>
 
+                            <TabsContent value="aprovacoes" className="space-y-4 mt-4">
+                                {((selectedOrder.aprovacoes && selectedOrder.aprovacoes.length > 0) || (selectedOrder.aprovacoesCotacao && selectedOrder.aprovacoesCotacao.length > 0)) ? (
+                                    <div className="space-y-4">
+                                        {selectedOrder.aprovacoes && selectedOrder.aprovacoes.length > 0 && (
+                                            <div className="space-y-2">
+                                                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Aprovações da Requisição</h4>
+                                                <div className="space-y-2">
+                                                    {selectedOrder.aprovacoes.map((ap: any, idx: number) => (
+                                                        <div key={idx} className="p-3 rounded-lg border border-border bg-muted/20 flex flex-col gap-1 text-xs">
+                                                            <div className="flex items-center justify-between">
+                                                                <span className="font-semibold text-foreground">
+                                                                    Nível {ap.nivel ?? idx + 1}: {ap.usuario || 'Usuário não informado'}
+                                                                </span>
+                                                                <Badge variant="outline" className={ap.status === 'Aprovado' ? 'border-green-500 text-green-600' : 'border-yellow-500 text-yellow-600'}>
+                                                                    {ap.status || 'Pendente'}
+                                                                </Badge>
+                                                            </div>
+                                                            {ap.dataAprovacao && (
+                                                                <span className="text-muted-foreground">Data: {new Date(ap.dataAprovacao).toLocaleString('pt-BR')}</span>
+                                                            )}
+                                                            {ap.justificativa && (
+                                                                <p className="text-muted-foreground mt-1">Obs: {ap.justificativa}</p>
+                                                            )}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                        {selectedOrder.aprovacoesCotacao && selectedOrder.aprovacoesCotacao.length > 0 && (
+                                            <div className="space-y-2">
+                                                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Aprovações de Cotação</h4>
+                                                <div className="space-y-2">
+                                                    {selectedOrder.aprovacoesCotacao.map((ap: any, idx: number) => (
+                                                        <div key={idx} className="p-3 rounded-lg border border-border bg-muted/20 flex flex-col gap-1 text-xs">
+                                                            <div className="flex items-center justify-between">
+                                                                <span className="font-semibold text-foreground">
+                                                                    {ap.usuario || 'Aprovador de Cotação'}
+                                                                </span>
+                                                                <Badge variant="outline" className={ap.status === 'Aprovado' ? 'border-green-500 text-green-600' : 'border-yellow-500 text-yellow-600'}>
+                                                                    {ap.status || 'Pendente'}
+                                                                </Badge>
+                                                            </div>
+                                                            {ap.dataAprovacao && (
+                                                                <span className="text-muted-foreground">Data: {new Date(ap.dataAprovacao).toLocaleString('pt-BR')}</span>
+                                                            )}
+                                                            {ap.justificativa && (
+                                                                <p className="text-muted-foreground mt-1">Obs: {ap.justificativa}</p>
+                                                            )}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <p className="text-center py-6 text-muted-foreground text-sm">Nenhum registro de aprovação para esta requisição.</p>
+                                )}
+                            </TabsContent>
+
                             <TabsContent value="entrega" className="space-y-4 mt-4">
                                 {selectedOrder.local_entrega ? (
                                     <div className="space-y-2">
@@ -916,7 +1020,7 @@ export default function PedidosPage() {
                             <TabsContent value="timeline" className="space-y-4 mt-4">
                                 <div className="flex items-center justify-between mb-4">
                                     <h4 className="text-sm font-medium text-foreground">Histórico do Pedido</h4>
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex items-center gap-7">
                                         <Button variant={timelineFilter === 'todos' ? 'default' : 'outline'} size="sm" onClick={() => setTimelineFilter('todos')} className="h-8">
                                             <Layers className="w-3 h-3 mr-1" />
                                             Todos

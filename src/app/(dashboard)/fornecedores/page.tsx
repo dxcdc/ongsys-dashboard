@@ -1,9 +1,9 @@
 // src/app/fornecedores/page.tsx
 'use client'
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { motion } from "framer-motion"
-import { Search, Eye, ChevronLeft, ChevronRight, Building2 } from "lucide-react"
+import { Search, Eye, ChevronLeft, ChevronRight, Building2, RotateCcw } from "lucide-react"
 import { Input } from "@/src/components/ui/input"
 import { Button } from "@/src/components/ui/button"
 import { Badge } from "@/src/components/ui/badge"
@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/src/componen
 import { Skeleton } from "@/src/components/ui/skeleton"
 import { formatDocument, getDocumentType } from "@/src/lib/utils"
 import { LoadingScreen } from "@/src/components/ui/LoadingScreen"
+import { useFornecedores } from "@/src/contexts/FornecedoresContext"
 
 const PAGE_SIZE = 20
 
@@ -28,134 +29,50 @@ interface Supplier {
     ativo: boolean
 }
 
-// Função auxiliar para determinar tipo de pessoa
-function getPersonType(item: any): 'PJ' | 'PF' {
-    // Verificar campo 'pessoa'
-    if (item.pessoa === 'Jurídica') return 'PJ'
-    if (item.pessoa === 'Física') return 'PF'
-
-    // Verificar campo 'tipo'
-    if (item.tipo === 'J') return 'PJ'
-    if (item.tipo === 'F') return 'PF'
-
-    // Verificar campo 'tipoFornecedor'
-    if (item.tipoFornecedor === 'Jurídica') return 'PJ'
-    if (item.tipoFornecedor === 'Física') return 'PF'
-
-    // Verificar pelo documento (se for CNPJ 14 dígitos, é PJ)
-    const doc = item.documento || ''
-    const digits = doc.replace(/\D/g, '')
-    if (digits.length === 14) return 'PJ'
-    if (digits.length === 11) return 'PF'
-
-    return 'PJ' // default
-}
-
 export default function FornecedoresPage() {
-    const [suppliers, setSuppliers] = useState<Supplier[]>([])
-    const [loading, setLoading] = useState(true)
+    const { data: allSuppliersRaw, loading, reload, loadError } = useFornecedores()
     const [search, setSearch] = useState("")
     const [typeFilter, setTypeFilter] = useState<string>("all")
     const [page, setPage] = useState(1)
     const [selected, setSelected] = useState<Supplier | null>(null)
-    const [totalPages, setTotalPages] = useState(1)
-    const [totalItems, setTotalItems] = useState(0)
 
-    // Função para buscar fornecedores da API externa
-    const fetchSuppliers = async () => {
-        setLoading(true)
-        try {
-            const params = new URLSearchParams()
-            params.append('page', page.toString())
+    // Filtrar por busca e tipo em memória
+    const filteredSuppliers: Supplier[] = useMemo(() => {
+        let list: Supplier[] = (allSuppliersRaw as any[] || [])
 
-            if (search) params.append('search', search)
-
-            // A API externa precisa de datas
-            const hoje = new Date()
-            const primeiroDia = new Date(hoje.getFullYear(), hoje.getMonth(), 1)
-            const ultimoDia = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0)
-
-            params.append('data_inicio', primeiroDia.toISOString().split('T')[0])
-            params.append('data_fim', ultimoDia.toISOString().split('T')[0])
-
-            const response = await fetch(`/api/fornecedores?${params.toString()}`)
-
-            if (!response.ok) {
-                throw new Error('Erro ao buscar fornecedores')
-            }
-
-            const data = await response.json()
-
-            // Adaptar dados da API Ongsys para o formato esperado
-            const fornecedoresFormatados: Supplier[] = (data.data || []).map((item: any) => {
-                // Extrair endereço
-                const endereco = item.endereco || {}
-
-                return {
-                    id: String(item.id || item.codigo || ''),
-                    code: String(item.id || item.codigo || ''),
-                    name: item.nomeEmpresa || item.nome || 'Nome não informado',
-                    document: item.documento || '',
-                    personType: getPersonType(item),
-                    email: item.email || '',
-                    phone: item.telefonePrincipal || item.telefone || '',
-                    city: endereco.cidade || '',
-                    state: endereco.estado || '',
-                    ativo: item.ativoInativo === 'A'
-                }
-            })
-
-            // Filtrar por tipo (se necessário)
-            let filtrados: Supplier[] = fornecedoresFormatados
-            if (typeFilter !== 'all') {
-                filtrados = filtrados.filter((supplier: Supplier) => supplier.personType === typeFilter)
-            }
-
-            // Filtrar por busca (se necessário)
-            if (search) {
-                const searchLower = search.toLowerCase()
-                filtrados = filtrados.filter((supplier: Supplier) =>
-                    supplier.name.toLowerCase().includes(searchLower) ||
-                    supplier.document.includes(search) ||
-                    supplier.code.toLowerCase().includes(searchLower)
-                )
-            }
-
-            setSuppliers(filtrados)
-            setTotalItems(filtrados.length)
-            setTotalPages(Math.ceil(filtrados.length / PAGE_SIZE))
-
-        } catch (error) {
-            console.error('Erro ao buscar fornecedores:', error)
-        } finally {
-            setLoading(false)
+        if (typeFilter !== 'all') {
+            list = list.filter((supplier) => supplier.personType === typeFilter)
         }
-    }
 
-    // Buscar dados quando página ou busca mudar
-    useEffect(() => {
-        fetchSuppliers()
-    }, [page])
+        if (search.trim()) {
+            const searchLower = search.toLowerCase().trim()
+            list = list.filter((supplier) =>
+                (supplier.name || '').toLowerCase().includes(searchLower) ||
+                (supplier.document || '').includes(searchLower) ||
+                (supplier.code || '').toLowerCase().includes(searchLower)
+            )
+        }
+
+        return list
+    }, [allSuppliersRaw, search, typeFilter])
+
+    const totalItems = filteredSuppliers.length
+    const totalPages = Math.ceil(totalItems / PAGE_SIZE) || 1
 
     // Resetar página quando filtros mudam
     useEffect(() => {
         setPage(1)
     }, [search, typeFilter])
 
-    // Re-buscar quando search ou typeFilter mudar
-    useEffect(() => {
-        if (page === 1) {
-            fetchSuppliers()
-        }
-    }, [search, typeFilter])
+    // Paginação dos dados exibidos em memória (instantânea)
+    const paginatedSuppliers = useMemo(() => {
+        return filteredSuppliers.slice(
+            (page - 1) * PAGE_SIZE,
+            page * PAGE_SIZE
+        )
+    }, [filteredSuppliers, page])
 
-    // Paginação dos dados exibidos
-    const paginatedSuppliers = suppliers.slice(
-        (page - 1) * PAGE_SIZE,
-        page * PAGE_SIZE
-    )
-
-    if (loading && suppliers.length === 0) {
+    if (loading && (!allSuppliersRaw || allSuppliersRaw.length === 0)) {
         return (
             <LoadingScreen
                 variant="skeleton"
@@ -199,6 +116,15 @@ export default function FornecedoresPage() {
                         <SelectItem value="PF">Pessoa Física</SelectItem>
                     </SelectContent>
                 </Select>
+                <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={() => reload()}
+                    disabled={loading}
+                    title="Recarregar fornecedores da OngSys"
+                >
+                    <RotateCcw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                </Button>
             </div>
 
             {/* Indicadores de filtros ativos */}

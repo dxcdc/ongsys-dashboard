@@ -8,9 +8,7 @@ export async function GET(request: NextRequest) {
         const searchParams = request.nextUrl.searchParams;
         const etapaFiltro = searchParams.get('etapa');
 
-        // 🔥 Buscar apenas a primeira página para estatísticas (mais rápido)
-        const primeiraPagina = await pedidosService.listar({}, 1);
-        const pedidos = primeiraPagina.data || [];
+        const pedidos = await pedidosService.listarTodos({});
 
         // Calcular estatísticas (filtrando etapas visíveis)
         const etapasValidas = ETAPAS.filter(e => !e.oculta);
@@ -23,28 +21,28 @@ export async function GET(request: NextRequest) {
         }));
 
         pedidos.forEach((pedido: any) => {
-            const etapa = identificarEtapaAtual(pedido.logs || [], pedido.statusPedido || pedido.status_pedido);
+            const etapa = identificarEtapaAtual(pedido);
             const etapaInfo = estatisticas.find(e => e.nome === etapa);
             if (etapaInfo) etapaInfo.quantidade++;
         });
 
         // Se tiver filtro de etapa, buscar a página específica
         if (etapaFiltro && etapaFiltro !== 'Todas') {
-            // Para o filtro, buscamos mais páginas
-            const todosPedidos = await pedidosService.listarTodos({});
-            const pedidosFiltrados = todosPedidos.filter((pedido: any) => {
-                const etapa = identificarEtapaAtual(pedido.logs || [], pedido.statusPedido || pedido.status_pedido);
+            const pedidosFiltrados = pedidos.filter((pedido: any) => {
+                const etapa = identificarEtapaAtual(pedido);
                 return etapa === etapaFiltro;
             });
 
             const pedidosAdaptados = pedidosFiltrados.slice(0, 50).map((p: any) => ({
-                id: p.idPedido,
-                id_pedido: p.idPedido,
+                id: p.idPedido || p.id_pedido || p.idRequisicao || p.id,
+                id_pedido: p.idPedido || p.id_pedido || '',
+                id_requisicao: p.idRequisicao || p.id_requisicao || '',
                 titulo: p.titulo,
-                status_pedido: p.statusPedido,
-                fornecedor_nome: p.fornecedor?.nome,
-                data_pedido: p.dataPedido,
-                tipo_pedido: p.tipoPedido
+                status_pedido: p.statusPedido || p.status_pedido,
+                etapa: p.etapa,
+                fornecedor_nome: p.fornecedor?.nome || p.fornecedor_nome,
+                data_pedido: p.dataPedido || p.data_pedido,
+                tipo_pedido: p.tipoPedido || p.tipo_pedido
             }));
 
             return NextResponse.json({

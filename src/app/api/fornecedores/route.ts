@@ -6,10 +6,9 @@ export async function GET(request: NextRequest) {
     try {
         const searchParams = request.nextUrl.searchParams;
         const page = parseInt(searchParams.get('page') || '1');
-        const startDate = searchParams.get('data_inicio') || undefined;
-        const endDate = searchParams.get('data_fim') || undefined;
+        const filtro = searchParams.get('filtro') || undefined;
 
-        const result = await fornecedoresService.listar({ startDate, endDate }, page);
+        const result = await fornecedoresService.listar(page, filtro);
 
         return NextResponse.json(result);
     } catch (error) {
