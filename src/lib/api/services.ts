@@ -234,14 +234,18 @@ export const pedidosService = {
 
                         // Regra de cancelamento
                         const hasCancelamento = req.cancelamento !== null && req.cancelamento !== undefined
-                        if (hasCancelamento) {
-                            cloned.cancelamento = req.cancelamento
+                        const reqStatusUpper = String(req.status || '').toUpperCase()
+                        const reqStatusCancelado = reqStatusUpper.includes('CANCEL') || reqStatusUpper.includes('NEGAD') || reqStatusUpper.includes('REJEIT')
+                        const isReqCancelado = hasCancelamento || reqStatusCancelado || req.etapa === null
+
+                        if (isReqCancelado) {
+                            cloned.cancelamento = req.cancelamento || { usuario: 'Sistema', justificativa: req.status || 'Ordem Negada' }
                             cloned.etapa = 'CANCELADO'
                             cloned.statusPedido = 'Cancelado'
                             cloned.status_pedido = 'Cancelado'
                         } else {
                             cloned.cancelamento = null
-                            if (req.etapa && !cloned.etapa) {
+                            if (req.etapa) {
                                 cloned.etapa = `ETAPA 0${req.etapa}`
                             }
                         }
@@ -262,7 +266,8 @@ export const pedidosService = {
                         }
                     } else {
                         // Sem correspondência na rota requisições
-                        const isCancelado = String(cloned.statusPedido || cloned.status_pedido || '').toUpperCase().includes('CANCEL')
+                        const statusUpper = String(cloned.statusPedido || cloned.status_pedido || '').toUpperCase()
+                        const isCancelado = statusUpper.includes('CANCEL') || statusUpper.includes('NEGAD') || statusUpper.includes('REJEIT')
                         if (isCancelado) {
                             cloned.etapa = 'CANCELADO'
                         }
@@ -277,11 +282,12 @@ export const pedidosService = {
                     if (matchedReqIds.has(reqId)) return
 
                     const hasCancelamento = req.cancelamento !== null && req.cancelamento !== undefined
-                    const isStatusCancelado = String(req.status || '').toUpperCase().includes('CANCEL')
-                    const isCancelado = hasCancelamento || isStatusCancelado
+                    const reqStatusUpper = String(req.status || '').toUpperCase()
+                    const isStatusCancelado = reqStatusUpper.includes('CANCEL') || reqStatusUpper.includes('NEGAD') || reqStatusUpper.includes('REJEIT')
+                    const isCancelado = hasCancelamento || isStatusCancelado || req.etapa === null
 
                     const etapaStr = isCancelado ? 'CANCELADO' : `ETAPA 0${req.etapa || 1}`
-                    const statusStr = isCancelado ? 'Cancelado' : (req.status || `Etapa 0${req.etapa || 1}`)
+                    const statusStr = isCancelado ? (req.status || 'Cancelado') : (req.status || `Etapa 0${req.etapa || 1}`)
 
                     const syntheticOrder = {
                         id: `r_${req.idRequisicao}`,

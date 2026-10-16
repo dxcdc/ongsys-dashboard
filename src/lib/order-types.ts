@@ -208,16 +208,20 @@ export function identificarEtapaAtual(
     const statusNormalized = status ? String(status).trim() : ''
     const statusUpper = statusNormalized.toUpperCase()
 
-    // 2. Verificação direta de CANCELADO pelo status do pedido
-    if (statusUpper.includes('CANCEL')) {
+    // 2. Verificação direta de CANCELADO pelo status do pedido (Cancelado, Ordem Negada, Rejeitado, etc.)
+    if (
+        statusUpper.includes('CANCEL') ||
+        statusUpper.includes('NEGAD') ||
+        statusUpper.includes('REJEIT')
+    ) {
         return 'CANCELADO'
     }
 
-    // 3. Se tiver etapa fixa pré-definida de requisição (ex: ETAPA 01 a 04)
+    // 3. Se tiver etapa fixa pré-definida de requisição
     if (etapaFixa) {
         const norm = normalizarNomeEtapa(etapaFixa)
         if (norm === 'CANCELADO') return 'CANCELADO'
-        if (norm === 'ETAPA 01' || norm === 'ETAPA 02' || norm === 'ETAPA 03' || norm === 'ETAPA 04') {
+        if (norm === 'ETAPA 01' || norm === 'ETAPA 02' || norm === 'ETAPA 03' || norm === 'ETAPA 04' || norm === 'ETAPA 05' || norm === 'ETAPA 06') {
             return norm
         }
     }
@@ -329,28 +333,80 @@ export interface CotacaoAlertInfo {
     label: string
 }
 
-// Função para calcular atraso em dias sem cotação (3, 7 e 10+ dias)
-export function calcularAtrasoCotacao(order?: { logs?: LogPedido[]; data_pedido?: string; status_pedido?: string; statusPedido?: string } | null): CotacaoAlertInfo | null {
+// Extratores de datas específicas de cada etapa
+export function getDataEntradaCotacao(order: any): string | null {
+    if (!order) return null
+    const logs = order.logs || []
+    // Último log de aprovação da requisição (etapa 2) que libera para cotação
+    const logsEtapa2 = logs.filter((l: any) => l.etapa === 2 || (l.acao && l.acao.includes('Aprovou a requisição')))
+    if (logsEtapa2.length > 0) {
+        return logsEtapa2[logsEtapa2.length - 1].data
+    }
+    // Fallback: array aprovacoes
+    if (order.aprovacoes && order.aprovacoes.length > 0) {
+        const lastAprov = order.aprovacoes[order.aprovacoes.length - 1]
+        if (lastAprov.data || lastAprov.dataAprovacao) return lastAprov.data || lastAprov.dataAprovacao
+    }
+    return null
+}
+
+export function getDataEntradaAprovacaoCotacao(order: any): string | null {
+    if (!order) return null
+    const logs = order.logs || []
+    const logEnvio = logs.find((l: any) => l.acao && l.acao.includes('Enviou a cotação'))
+    if (logEnvio) return logEnvio.data
+    const logPreencheu = logs.find((l: any) => l.acao && l.acao.includes('Preencheu a cotação'))
+    if (logPreencheu) return logPreencheu.data
+    return null
+}
+
+export function getDataAprovacaoCotacao(order: any): string | null {
+    if (!order) return null
+    const logs = order.logs || []
+    const logsAprov = logs.filter((l: any) => l.etapa === 4 || (l.acao && l.acao.includes('Aprovou a cotação')))
+    if (logsAprov.length > 0) {
+        return logsAprov[logsAprov.length - 1].data
+    }
+    if (order.aprovacoesCotacao && order.aprovacoesCotacao.length > 0) {
+        const last = order.aprovacoesCotacao[order.aprovacoesCotacao.length - 1]
+        if (last.data || last.dataAprovacao) return last.data || last.dataAprovacao
+    }
+    return null
+}
+
+export function getDataFinalizacao(order: any): string | null {
+    if (!order) return null
+    const logs = order.logs || []
+    const logsFinalizacao = logs.filter((l: any) => l.acao && (l.acao.includes('Encerrou o pedido') || l.acao.includes('finaliz')))
+    if (logsFinalizacao.length > 0) {
+        return logsFinalizacao[logsFinalizacao.length - 1].data
+    }
+    return null
+}
+
+// Função para calcular atraso em dias sem cotação (a partir de quando o pedido entrou em cotação)
+export function calcularAtrasoCotacao(order?: any | null): CotacaoAlertInfo | null {
     if (!order) return null
 
-    const etapaAtual = identificarEtapaAtual(order.logs || [], order.status_pedido || order.statusPedido)
+    const etapaAtual = identificarEtapaAtual(order)
 
-    // Se o pedido já avançou além da cotação ou foi finalizado/cancelado, não aplica alerta
-    if (etapaAtual === 'ETAPA 04' || etapaAtual === 'ETAPA 05' || etapaAtual === 'ETAPA 06' || etapaAtual === 'CANCELADO') {
+    // Se o pedido não está na etapa de cotação, não aplica alerta
+    if (etapaAtual !== 'ETAPA 03') {
         return null
     }
 
     let timestampInicio = 0
 
-    if (order.logs && order.logs.length > 0) {
-        const logEtapa3 = order.logs.find(log => identificarEtapa(log) === 'ETAPA 03')
+    // Data de entrada em cotação (aprovação da etapa 2)
+    const dataEntradaCotacao = getDataEntradaCotacao(order)
+    if (dataEntradaCotacao) {
+        timestampInicio = parseLogDate(dataEntradaCotacao)
+    }
+
+    if (!timestampInicio && order.logs && order.logs.length > 0) {
+        const logEtapa3 = order.logs.find((log: any) => identificarEtapa(log) === 'ETAPA 03')
         if (logEtapa3) {
             timestampInicio = parseLogDate(logEtapa3.data)
-        } else {
-            const firstLog = order.logs[0]
-            if (firstLog) {
-                timestampInicio = parseLogDate(firstLog.data)
-            }
         }
     }
 
@@ -372,7 +428,7 @@ export function calcularAtrasoCotacao(order?: { logs?: LogPedido[]; data_pedido?
             nivel: 'critico',
             cor: 'text-red-600 border-red-500 bg-red-50 dark:bg-red-950/40',
             badgeBg: 'bg-red-500 text-white',
-            label: `${dias}d sem cotação (Crítico)`
+            label: `${dias}d em cotação (Crítico)`
         }
     }
 
@@ -382,7 +438,7 @@ export function calcularAtrasoCotacao(order?: { logs?: LogPedido[]; data_pedido?
             nivel: 'alerta',
             cor: 'text-orange-600 border-orange-500 bg-orange-50 dark:bg-orange-950/40',
             badgeBg: 'bg-orange-500 text-white',
-            label: `${dias}d sem cotação (Alerta)`
+            label: `${dias}d em cotação (Alerta)`
         }
     }
 
@@ -392,7 +448,7 @@ export function calcularAtrasoCotacao(order?: { logs?: LogPedido[]; data_pedido?
             nivel: 'atencao',
             cor: 'text-amber-600 border-amber-500 bg-amber-50 dark:bg-amber-950/40',
             badgeBg: 'bg-amber-500 text-white',
-            label: `${dias}d sem cotação (Atenção)`
+            label: `${dias}d em cotação (Atenção)`
         }
     }
 

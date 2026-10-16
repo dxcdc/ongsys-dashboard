@@ -42,7 +42,17 @@ import {
     DropdownMenuTrigger,
 } from "@/src/components/ui/dropdown-menu"
 import { formatCurrency } from "@/src/lib/utils"
-import { ETAPAS, agruparLogsPorEtapa, identificarEtapaAtual, calcularAtrasoCotacao, type EtapaEstatistica } from "@/src/lib/order-types"
+import {
+    ETAPAS,
+    agruparLogsPorEtapa,
+    identificarEtapaAtual,
+    calcularAtrasoCotacao,
+    getDataEntradaCotacao,
+    getDataEntradaAprovacaoCotacao,
+    getDataAprovacaoCotacao,
+    getDataFinalizacao,
+    type EtapaEstatistica
+} from "@/src/lib/order-types"
 import { useAuth } from "@/src/hooks/useAuth"
 import { usePedidos } from "@/src/contexts/PedidosContext"
 import { getCostCenterName } from "@/src/lib/cost-centers-map"
@@ -116,6 +126,36 @@ const getPedidoInfo = (pedido: Order) => {
         centroCusto: primeiroItem?.centroCusto || '---',
         grupo: primeiroItem?.grupo || '---'
     }
+}
+
+// Extrai data contextual e rótulo de acordo com a etapa do pedido
+const getEtapaDateInfo = (order: Order, etapaAtualNome?: string | null) => {
+    const et = etapaAtualNome || order.etapa
+    if (et === 'ETAPA 03') {
+        const d = getDataEntradaCotacao(order)
+        return { label: 'Entrada Cotação', date: d }
+    }
+    if (et === 'ETAPA 04') {
+        const d = getDataEntradaAprovacaoCotacao(order)
+        return { label: 'Envio p/ Aprov.', date: d }
+    }
+    if (et === 'ETAPA 05') {
+        const d = getDataAprovacaoCotacao(order)
+        return { label: 'Aprov. Cotação', date: d }
+    }
+    if (et === 'ETAPA 06') {
+        const d = getDataFinalizacao(order)
+        return { label: 'Finalização', date: d }
+    }
+    return null
+}
+
+const getEtapaHeaderLabel = (selectedEtapa: string) => {
+    if (selectedEtapa === 'ETAPA 03') return 'Entrada Cotação'
+    if (selectedEtapa === 'ETAPA 04') return 'Envio Cotação'
+    if (selectedEtapa === 'ETAPA 05') return 'Aprovação Cotação'
+    if (selectedEtapa === 'ETAPA 06') return 'Data Finalização'
+    return 'Marco da Etapa'
 }
 
 export default function PedidosPage() {
@@ -234,9 +274,11 @@ export default function PedidosPage() {
         const seen = new Set<string>()
         const uniqueRaw: Order[] = []
         allOrdersRaw.forEach(order => {
-            const key = order.id_pedido
-                ? `p_${order.id_pedido}`
-                : (order.id_requisicao ? `r_${order.id_requisicao}` : `id_${order.id}`)
+            const reqId = order.id_requisicao || (order as any).idRequisicao
+            const pedId = order.id_pedido || (order as any).idPedido
+            const key = pedId
+                ? `p_${pedId}`
+                : (reqId ? `r_${reqId}` : `id_${order.id}`)
             if (!seen.has(key)) {
                 seen.add(key)
                 uniqueRaw.push(order)
@@ -256,11 +298,13 @@ export default function PedidosPage() {
             const searchLower = search.toLowerCase()
             filtered = filtered.filter((order: Order) => {
                 const titulo = order.titulo ? String(order.titulo).toLowerCase() : ''
-                const idRequisicao = order.id_requisicao ? String(order.id_requisicao).toLowerCase() : ''
+                const idRequisicao = (order.id_requisicao || (order as any).idRequisicao) ? String(order.id_requisicao || (order as any).idRequisicao).toLowerCase() : ''
+                const idPedido = (order.id_pedido || (order as any).idPedido) ? String(order.id_pedido || (order as any).idPedido).toLowerCase() : ''
                 const fornecedor = order.fornecedor_nome ? String(order.fornecedor_nome).toLowerCase() : ''
 
                 return titulo.includes(searchLower) ||
                     idRequisicao.includes(searchLower) ||
+                    idPedido.includes(searchLower) ||
                     fornecedor.includes(searchLower)
             })
         }
@@ -704,13 +748,14 @@ export default function PedidosPage() {
                                 {isSepod ? (
                                     // Cabeçalho para SEPOD
                                     <>
-                                        <th className="text-left p-3 text-muted-foreground font-medium w-[120px]">ID Requisição</th>
+                                        <th className="text-left p-3 text-muted-foreground font-medium w-[130px]">Req / Pedido</th>
                                         <th className="text-left p-3 text-muted-foreground font-medium min-w-[200px]">Título</th>
                                         <th className="text-left p-3 text-muted-foreground font-medium w-[150px]">Centro de Custo</th>
                                         <th className="text-left p-3 text-muted-foreground font-medium w-[150px]">Grupo</th>
                                         <th className="text-left p-3 text-muted-foreground font-medium min-w-[180px]">Requisitante</th>
                                         <th className="text-left p-3 text-muted-foreground font-medium min-w-[180px]">Comprador</th>
                                         <th className="text-left p-3 text-muted-foreground font-medium w-[110px]">Data Pedido</th>
+                                        <th className="text-left p-3 text-muted-foreground font-medium w-[130px] whitespace-nowrap">{getEtapaHeaderLabel(etapa)}</th>
                                         <th className="text-left p-3 text-muted-foreground font-medium w-[110px]">Data Entrega</th>
                                         <th className="text-center p-3 text-muted-foreground font-medium w-[120px]">Status</th>
                                         <th className="text-center p-3 text-muted-foreground font-medium w-[110px]">Etapa</th>
@@ -719,10 +764,11 @@ export default function PedidosPage() {
                                 ) : (
                                     // Cabeçalho normal para outros usuários
                                     <>
-                                        <th className="text-left p-3 text-muted-foreground font-medium w-[120px]">ID Requisição</th>
+                                        <th className="text-left p-3 text-muted-foreground font-medium w-[130px]">Req / Pedido</th>
                                         <th className="text-left p-3 text-muted-foreground font-medium min-w-[250px]">Título</th>
                                         <th className="text-left p-3 text-muted-foreground font-medium hidden md:table-cell min-w-[200px]">Fornecedor</th>
-                                        <th className="text-left p-3 text-muted-foreground font-medium hidden lg:table-cell w-[110px]">Data</th>
+                                        <th className="text-left p-3 text-muted-foreground font-medium hidden lg:table-cell w-[110px]">Data Pedido</th>
+                                        <th className="text-left p-3 text-muted-foreground font-medium hidden lg:table-cell w-[130px] whitespace-nowrap">{getEtapaHeaderLabel(etapa)}</th>
                                         <th className="text-right p-3 text-muted-foreground font-medium hidden xl:table-cell w-[120px]">Valor</th>
                                         <th className="text-center p-3 text-muted-foreground font-medium w-[120px]">Status</th>
                                         <th className="text-center p-3 text-muted-foreground font-medium hidden lg:table-cell w-[110px]">Etapa Atual</th>
@@ -748,9 +794,18 @@ export default function PedidosPage() {
                                             className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors"
                                         >
                                             <td className="p-3 font-mono text-xs text-card-foreground align-top">
-                                                <span className="whitespace-normal break-words">
-                                                    {order.id_requisicao}
-                                                </span>
+                                                <div className="flex flex-col">
+                                                    <span className="font-semibold text-foreground whitespace-normal break-words" title="ID Requisição">
+                                                        Req #{order.id_requisicao || '---'}
+                                                    </span>
+                                                    {order.id_pedido ? (
+                                                        <span className="text-[11px] text-muted-foreground font-normal" title="Número do Pedido de Compra">
+                                                            Ped #{order.id_pedido}
+                                                        </span>
+                                                    ) : (
+                                                        <span className="text-[10px] text-muted-foreground/60 italic">Sem pedido</span>
+                                                    )}
+                                                </div>
                                             </td>
                                             <td className="p-3 text-card-foreground font-medium align-top">
                                                 <div className="whitespace-normal break-words max-w-[300px]">
@@ -784,6 +839,22 @@ export default function PedidosPage() {
                                             </td>
                                             <td className="p-3 text-muted-foreground align-top whitespace-nowrap">
                                                 {order.data_pedido ? new Date(order.data_pedido).toLocaleDateString("pt-BR") : '---'}
+                                            </td>
+                                            <td className="p-3 text-muted-foreground align-top whitespace-nowrap text-xs">
+                                                {(() => {
+                                                    const etapaDateInfo = getEtapaDateInfo(order, etapaAtual)
+                                                    const formattedDate = etapaDateInfo?.date
+                                                        ? new Date(etapaDateInfo.date.includes(' ') ? etapaDateInfo.date.replace(' ', 'T') : etapaDateInfo.date).toLocaleDateString("pt-BR")
+                                                        : '---'
+                                                    return (
+                                                        <div>
+                                                            {etapa === 'Todas' && etapaDateInfo && (
+                                                                <div className="text-[10px] text-muted-foreground/70">{etapaDateInfo.label}</div>
+                                                            )}
+                                                            <span>{formattedDate}</span>
+                                                        </div>
+                                                    )
+                                                })()}
                                             </td>
                                             <td className="p-3 text-muted-foreground align-top whitespace-nowrap">
                                                 {order.dataEntregaEstimada ? new Date(order.dataEntregaEstimada).toLocaleDateString("pt-BR") : '---'}
@@ -840,9 +911,18 @@ export default function PedidosPage() {
                                             className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors"
                                         >
                                             <td className="p-3 font-mono text-xs text-card-foreground align-top">
-                                                <span className="whitespace-normal break-words">
-                                                    {order.id_requisicao}
-                                                </span>
+                                                <div className="flex flex-col">
+                                                    <span className="font-semibold text-foreground whitespace-normal break-words" title="ID Requisição">
+                                                        Req #{order.id_requisicao || '---'}
+                                                    </span>
+                                                    {order.id_pedido ? (
+                                                        <span className="text-[11px] text-muted-foreground font-normal" title="Número do Pedido de Compra">
+                                                            Ped #{order.id_pedido}
+                                                        </span>
+                                                    ) : (
+                                                        <span className="text-[10px] text-muted-foreground/60 italic">Sem pedido</span>
+                                                    )}
+                                                </div>
                                             </td>
                                             <td className="p-3 text-card-foreground font-medium align-top">
                                                 <div className="whitespace-normal break-words max-w-[300px]">
@@ -856,6 +936,22 @@ export default function PedidosPage() {
                                             </td>
                                             <td className="p-3 hidden lg:table-cell text-muted-foreground align-top whitespace-nowrap">
                                                 {order.data_pedido ? new Date(order.data_pedido).toLocaleDateString("pt-BR") : '---'}
+                                            </td>
+                                            <td className="p-3 hidden lg:table-cell text-muted-foreground align-top whitespace-nowrap text-xs">
+                                                {(() => {
+                                                    const etapaDateInfo = getEtapaDateInfo(order, etapaAtual)
+                                                    const formattedDate = etapaDateInfo?.date
+                                                        ? new Date(etapaDateInfo.date.includes(' ') ? etapaDateInfo.date.replace(' ', 'T') : etapaDateInfo.date).toLocaleDateString("pt-BR")
+                                                        : '---'
+                                                    return (
+                                                        <div>
+                                                            {etapa === 'Todas' && etapaDateInfo && (
+                                                                <div className="text-[10px] text-muted-foreground/70">{etapaDateInfo.label}</div>
+                                                            )}
+                                                            <span>{formattedDate}</span>
+                                                        </div>
+                                                    )
+                                                })()}
                                             </td>
                                             <td className="p-3 text-right hidden xl:table-cell text-card-foreground font-medium align-top whitespace-nowrap">
                                                 {formatCurrency(order.valor_total || 0)}
@@ -951,7 +1047,8 @@ export default function PedidosPage() {
                 <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
                     <DialogHeader>
                         <DialogTitle className="text-xl">
-                            Detalhes do Pedido #{selectedOrder?.id_requisicao}
+                            Detalhes: Requisição #{selectedOrder?.id_requisicao}
+                            {selectedOrder?.id_pedido && ` (Pedido #${selectedOrder?.id_pedido})`}
                         </DialogTitle>
                     </DialogHeader>
                     {selectedOrder && (
@@ -1000,7 +1097,15 @@ export default function PedidosPage() {
                                     )
                                 })()}
                                 <div className="grid grid-cols-2 gap-4">
-                                    <div><p className="text-xs text-muted-foreground">ID Requisição</p><p className="text-sm font-medium">{selectedOrder.id_requisicao}</p></div>
+                                    <div>
+                                        <p className="text-xs text-muted-foreground">Identificadores</p>
+                                        <p className="text-sm font-medium">
+                                            Req #{selectedOrder.id_requisicao}
+                                            {selectedOrder.id_pedido && (
+                                                <span className="text-muted-foreground text-xs ml-1 font-normal">(Pedido #{selectedOrder.id_pedido})</span>
+                                            )}
+                                        </p>
+                                    </div>
                                     <div><p className="text-xs text-muted-foreground">Status</p><Badge variant="outline" className={getStatusColor(selectedOrder.status_pedido || '')}>{selectedOrder.status_pedido}</Badge></div>
                                 </div>
                                 <div><p className="text-xs text-muted-foreground">Título</p><p className="text-sm">{selectedOrder.titulo}</p></div>
@@ -1070,24 +1175,29 @@ export default function PedidosPage() {
                                             <div className="space-y-2">
                                                 <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Aprovações da Requisição</h4>
                                                 <div className="space-y-2">
-                                                    {selectedOrder.aprovacoes.map((ap: any, idx: number) => (
-                                                        <div key={idx} className="p-3 rounded-lg border border-border bg-muted/20 flex flex-col gap-1 text-xs">
-                                                            <div className="flex items-center justify-between">
-                                                                <span className="font-semibold text-foreground">
-                                                                    Nível {ap.nivel ?? idx + 1}: {ap.usuario || 'Usuário não informado'}
-                                                                </span>
-                                                                <Badge variant="outline" className={ap.status === 'Aprovado' ? 'border-green-500 text-green-600' : 'border-yellow-500 text-yellow-600'}>
-                                                                    {ap.status || 'Pendente'}
-                                                                </Badge>
+                                                    {selectedOrder.aprovacoes.map((ap: any, idx: number) => {
+                                                        const aprovadorNome = ap.aprovador || ap.usuario || ap.nome || 'Aprovador não informado'
+                                                        const dataAprov = ap.data || ap.dataAprovacao
+                                                        const obs = ap.justificativaRecusa || ap.justificativa || ap.comentario
+                                                        return (
+                                                            <div key={idx} className="p-3 rounded-lg border border-border bg-muted/20 flex flex-col gap-1 text-xs">
+                                                                <div className="flex items-center justify-between">
+                                                                    <span className="font-semibold text-foreground">
+                                                                        Nível {ap.nivel ?? idx + 1}: {aprovadorNome}
+                                                                    </span>
+                                                                    <Badge variant="outline" className={ap.status === 'Aprovado' || ap.status === 'Requisição aprovada' ? 'border-green-500 text-green-600' : 'border-yellow-500 text-yellow-600'}>
+                                                                        {ap.status || 'Pendente'}
+                                                                    </Badge>
+                                                                </div>
+                                                                {dataAprov && (
+                                                                    <span className="text-muted-foreground">Data: {new Date(dataAprov.includes(' ') ? dataAprov.replace(' ', 'T') : dataAprov).toLocaleString('pt-BR')}</span>
+                                                                )}
+                                                                {obs && (
+                                                                    <p className="text-muted-foreground mt-1">Obs: {obs}</p>
+                                                                )}
                                                             </div>
-                                                            {ap.dataAprovacao && (
-                                                                <span className="text-muted-foreground">Data: {new Date(ap.dataAprovacao).toLocaleString('pt-BR')}</span>
-                                                            )}
-                                                            {ap.justificativa && (
-                                                                <p className="text-muted-foreground mt-1">Obs: {ap.justificativa}</p>
-                                                            )}
-                                                        </div>
-                                                    ))}
+                                                        )
+                                                    })}
                                                 </div>
                                             </div>
                                         )}
@@ -1095,24 +1205,29 @@ export default function PedidosPage() {
                                             <div className="space-y-2">
                                                 <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Aprovações de Cotação</h4>
                                                 <div className="space-y-2">
-                                                    {selectedOrder.aprovacoesCotacao.map((ap: any, idx: number) => (
-                                                        <div key={idx} className="p-3 rounded-lg border border-border bg-muted/20 flex flex-col gap-1 text-xs">
-                                                            <div className="flex items-center justify-between">
-                                                                <span className="font-semibold text-foreground">
-                                                                    {ap.usuario || 'Aprovador de Cotação'}
-                                                                </span>
-                                                                <Badge variant="outline" className={ap.status === 'Aprovado' ? 'border-green-500 text-green-600' : 'border-yellow-500 text-yellow-600'}>
-                                                                    {ap.status || 'Pendente'}
-                                                                </Badge>
+                                                    {selectedOrder.aprovacoesCotacao.map((ap: any, idx: number) => {
+                                                        const aprovadorNome = ap.aprovador || ap.usuario || ap.nome || 'Aprovador de Cotação'
+                                                        const dataAprov = ap.data || ap.dataAprovacao
+                                                        const obs = ap.justificativaRecusa || ap.justificativa || ap.comentario
+                                                        return (
+                                                            <div key={idx} className="p-3 rounded-lg border border-border bg-muted/20 flex flex-col gap-1 text-xs">
+                                                                <div className="flex items-center justify-between">
+                                                                    <span className="font-semibold text-foreground">
+                                                                        {ap.nivel ? `Nível ${ap.nivel}: ` : ''}{aprovadorNome}
+                                                                    </span>
+                                                                    <Badge variant="outline" className={ap.status === 'Aprovado' || ap.status === 'Cotação aprovada' ? 'border-green-500 text-green-600' : 'border-yellow-500 text-yellow-600'}>
+                                                                        {ap.status || 'Pendente'}
+                                                                    </Badge>
+                                                                </div>
+                                                                {dataAprov && (
+                                                                    <span className="text-muted-foreground">Data: {new Date(dataAprov.includes(' ') ? dataAprov.replace(' ', 'T') : dataAprov).toLocaleString('pt-BR')}</span>
+                                                                )}
+                                                                {obs && (
+                                                                    <p className="text-muted-foreground mt-1">Obs: {obs}</p>
+                                                                )}
                                                             </div>
-                                                            {ap.dataAprovacao && (
-                                                                <span className="text-muted-foreground">Data: {new Date(ap.dataAprovacao).toLocaleString('pt-BR')}</span>
-                                                            )}
-                                                            {ap.justificativa && (
-                                                                <p className="text-muted-foreground mt-1">Obs: {ap.justificativa}</p>
-                                                            )}
-                                                        </div>
-                                                    ))}
+                                                        )
+                                                    })}
                                                 </div>
                                             </div>
                                         )}

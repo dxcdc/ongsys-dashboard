@@ -45,8 +45,24 @@ export async function GET() {
             conta_plano_financeiro: p.contaPlanoFinanceiro || p.conta_plano_financeiro || '',
             valor_total: p.valorTotal ?? (p.valor_total ?? (p.valorGlobal ?? 0)),
             cancelamento: p.cancelamento || null,
-            aprovacoes: p.aprovacoes || [],
-            aprovacoesCotacao: p.aprovacoesCotacao || []
+            aprovacoes: (p.aprovacoes || []).map((ap: any) => ({
+                ...ap,
+                aprovador: ap.aprovador || ap.usuario || '',
+                usuario: ap.usuario || ap.aprovador || '',
+                data: ap.data || ap.dataAprovacao || '',
+                dataAprovacao: ap.dataAprovacao || ap.data || '',
+                justificativa: ap.justificativa || ap.justificativaRecusa || '',
+                justificativaRecusa: ap.justificativaRecusa || ap.justificativa || ''
+            })),
+            aprovacoesCotacao: (p.aprovacoesCotacao || []).map((ap: any) => ({
+                ...ap,
+                aprovador: ap.aprovador || ap.usuario || '',
+                usuario: ap.usuario || ap.aprovador || '',
+                data: ap.data || ap.dataAprovacao || '',
+                dataAprovacao: ap.dataAprovacao || ap.data || '',
+                justificativa: ap.justificativa || ap.justificativaRecusa || '',
+                justificativaRecusa: ap.justificativaRecusa || ap.justificativa || ''
+            }))
         }))
         return NextResponse.json({ data, total: data.length })
     } catch (error: any) {
