@@ -51,11 +51,13 @@ import {
     getDataEntradaAprovacaoCotacao,
     getDataAprovacaoCotacao,
     getDataFinalizacao,
+    getEtapaDateInfo,
     type EtapaEstatistica
 } from "@/src/lib/order-types"
 import { useAuth } from "@/src/hooks/useAuth"
 import { usePedidos } from "@/src/contexts/PedidosContext"
 import { getCostCenterName, getAtitudeOnlyCostCenters, getCanonicalCostCenterCode } from "@/src/lib/cost-centers-map"
+import { exportOrdersToExcel } from "@/src/lib/export-orders-excel"
 import { LoadingScreen } from "@/src/components/ui/LoadingScreen"
 
 const PAGE_SIZE = 20
@@ -126,28 +128,6 @@ const getPedidoInfo = (pedido: Order) => {
         centroCusto: primeiroItem?.centroCusto || '---',
         grupo: primeiroItem?.grupo || '---'
     }
-}
-
-// Extrai data contextual e rótulo de acordo com a etapa do pedido
-const getEtapaDateInfo = (order: Order, etapaAtualNome?: string | null) => {
-    const et = etapaAtualNome || order.etapa
-    if (et === 'ETAPA 03') {
-        const d = getDataEntradaCotacao(order)
-        return { label: 'Entrada Cotação', date: d }
-    }
-    if (et === 'ETAPA 04') {
-        const d = getDataEntradaAprovacaoCotacao(order)
-        return { label: 'Envio p/ Aprov.', date: d }
-    }
-    if (et === 'ETAPA 05') {
-        const d = getDataAprovacaoCotacao(order)
-        return { label: 'Aprov. Cotação', date: d }
-    }
-    if (et === 'ETAPA 06') {
-        const d = getDataFinalizacao(order)
-        return { label: 'Finalização', date: d }
-    }
-    return null
 }
 
 const getEtapaHeaderLabel = (selectedEtapa: string) => {
@@ -408,33 +388,54 @@ export default function PedidosPage() {
         return estatisticas
     }, [filteredOrders])
 
+    const todosPermitidos = useMemo(() => {
+        const seen = new Set<string>()
+        const uniqueRaw: Order[] = []
+        allOrdersRaw.forEach(order => {
+            const reqId = order.id_requisicao || (order as any).idRequisicao
+            const pedId = order.id_pedido || (order as any).idPedido
+            const key = pedId
+                ? `p_${pedId}`
+                : (reqId ? `r_${reqId}` : `id_${order.id}`)
+            if (!seen.has(key)) {
+                seen.add(key)
+                uniqueRaw.push(order)
+            }
+        })
+        return aplicarFiltroCentroCusto(uniqueRaw)
+    }, [allOrdersRaw, aplicarFiltroCentroCusto])
+
     // Status e tipos únicos
     const uniqueStatus = useMemo(() => {
         const statusSet = new Set<string>()
-        const pedidosPermitidos = aplicarFiltroCentroCusto(allOrdersRaw)
-        pedidosPermitidos.forEach((order: Order) => {
+        todosPermitidos.forEach((order: Order) => {
             if (order.status_pedido) statusSet.add(order.status_pedido)
         })
         return ['todos', ...Array.from(statusSet)]
-    }, [allOrdersRaw, aplicarFiltroCentroCusto])
+    }, [todosPermitidos])
 
     const uniqueTipos = useMemo(() => {
         const tipoSet = new Set<string>()
-        const pedidosPermitidos = aplicarFiltroCentroCusto(allOrdersRaw)
-        pedidosPermitidos.forEach((order: Order) => {
+        todosPermitidos.forEach((order: Order) => {
             if (order.tipo_pedido) tipoSet.add(order.tipo_pedido)
         })
         return ['todos', ...Array.from(tipoSet)]
-    }, [allOrdersRaw, aplicarFiltroCentroCusto])
+    }, [todosPermitidos])
 
     const paginatedOrders = filteredOrders.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
     const handleExport = async (exportTipo: 'pagina' | 'filtro' | 'tudo') => {
         setExporting(true)
         try {
-            await new Promise(resolve => setTimeout(resolve, 1000))
-            const dadosExportar = exportTipo === 'pagina' ? paginatedOrders : filteredOrders
-            alert(`Exportação simulada! ${dadosExportar.length} itens.`)
+            let dadosExportar: Order[] = []
+            if (exportTipo === 'pagina') {
+                dadosExportar = paginatedOrders
+            } else if (exportTipo === 'filtro') {
+                dadosExportar = filteredOrders
+            } else {
+                dadosExportar = todosPermitidos
+            }
+            exportOrdersToExcel(dadosExportar, exportTipo, getPedidoCentrosCusto)
         } catch (error) {
             console.error('Erro ao exportar:', error)
             alert('Erro ao exportar pedidos. Tente novamente.')
@@ -526,7 +527,7 @@ export default function PedidosPage() {
                             <DropdownMenuSeparator />
                             <DropdownMenuItem onClick={() => handleExport('tudo')}>
                                 <Download className="w-4 h-4 mr-2" />
-                                Todos os pedidos ({allOrdersRaw.length} itens)
+                                Todos os pedidos ({todosPermitidos.length} itens)
                             </DropdownMenuItem>
                         </DropdownMenuContent>
                     </DropdownMenu>

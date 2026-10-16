@@ -384,6 +384,27 @@ export function getDataFinalizacao(order: any): string | null {
     return null
 }
 
+export function getEtapaDateInfo(order: any, etapaAtualNome?: string | null): { label: string; date: string | null } | null {
+    const et = etapaAtualNome || order?.etapa
+    if (et === 'ETAPA 03') {
+        const d = getDataEntradaCotacao(order)
+        return { label: 'Entrada Cotação', date: d }
+    }
+    if (et === 'ETAPA 04') {
+        const d = getDataEntradaAprovacaoCotacao(order)
+        return { label: 'Envio p/ Aprov.', date: d }
+    }
+    if (et === 'ETAPA 05') {
+        const d = getDataAprovacaoCotacao(order)
+        return { label: 'Aprov. Cotação', date: d }
+    }
+    if (et === 'ETAPA 06') {
+        const d = getDataFinalizacao(order)
+        return { label: 'Finalização', date: d }
+    }
+    return null
+}
+
 // Função para calcular atraso em dias sem cotação (a partir de quando o pedido entrou em cotação)
 export function calcularAtrasoCotacao(order?: any | null): CotacaoAlertInfo | null {
     if (!order) return null
