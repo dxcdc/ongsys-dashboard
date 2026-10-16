@@ -55,7 +55,7 @@ import {
 } from "@/src/lib/order-types"
 import { useAuth } from "@/src/hooks/useAuth"
 import { usePedidos } from "@/src/contexts/PedidosContext"
-import { getCostCenterName } from "@/src/lib/cost-centers-map"
+import { getCostCenterName, getAtitudeOnlyCostCenters, getCanonicalCostCenterCode } from "@/src/lib/cost-centers-map"
 import { LoadingScreen } from "@/src/components/ui/LoadingScreen"
 
 const PAGE_SIZE = 20
@@ -212,28 +212,43 @@ export default function PedidosPage() {
 
     // PEGAR DADOS DO USUÁRIO DA SESSÃO
     const userRole = user?.role
-    const userCentrosCusto: string[] = user?.centrosCusto ?? []
+    const atitudeDefaultCodes = useMemo(() => getAtitudeOnlyCostCenters().map(c => c.code), [])
+    const userCentrosCusto: string[] = useMemo(() => {
+        const fromSession = user?.centrosCusto ?? []
+        if (userRole === 'SEPOD') {
+            return fromSession.length > 0 ? fromSession : atitudeDefaultCodes
+        }
+        return fromSession
+    }, [user?.centrosCusto, userRole, atitudeDefaultCodes])
 
-    // FUNÇÃO PARA EXTRAIR CENTROS DE CUSTO DE UM PEDIDO
+    // FUNÇÃO PARA EXTRAIR CENTROS DE CUSTO DE UM PEDIDO (unifica códigos legados nos oficiais)
     const getPedidoCentrosCusto = useCallback((pedido: Order): string[] => {
         const centros = new Set<string>()
         pedido.itens_pedido?.forEach((item: any) => {
             const cc = item.centroCusto || item.centro_custo || item.codigoCentroCusto
-            if (cc) centros.add(String(cc).trim())
+            if (cc) centros.add(getCanonicalCostCenterCode(String(cc).trim()))
         })
+        if (pedido.subprojeto) centros.add(getCanonicalCostCenterCode(String(pedido.subprojeto).trim()))
+        if ((pedido as any).centro_custo) centros.add(getCanonicalCostCenterCode(String((pedido as any).centro_custo).trim()))
+        if ((pedido as any).raw?.subprojeto) centros.add(getCanonicalCostCenterCode(String((pedido as any).raw.subprojeto).trim()))
         return Array.from(centros)
     }, [])
 
     // FUNÇÃO PARA VERIFICAR SE PEDIDO PERTENCE AOS CENTROS DO USUÁRIO
     const pedidoPertenceAoUsuario = useCallback((pedido: Order): boolean => {
         if (userRole === 'SUPER_ADMIN' || userRole === 'OPERADOR_SEDE') return true
-        if (userRole === 'CONSULTOR' || userRole === 'SEPOD') {
+        if (userRole === 'SEPOD') {
+            const allowed = userCentrosCusto.length > 0 ? userCentrosCusto : atitudeDefaultCodes
+            const centrosPedido = getPedidoCentrosCusto(pedido)
+            return centrosPedido.some(centro => allowed.includes(centro))
+        }
+        if (userRole === 'CONSULTOR') {
             if (!userCentrosCusto.length) return false
             const centrosPedido = getPedidoCentrosCusto(pedido)
             return centrosPedido.some(centro => userCentrosCusto.includes(centro))
         }
         return true
-    }, [userRole, userCentrosCusto, getPedidoCentrosCusto])
+    }, [userRole, userCentrosCusto, atitudeDefaultCodes, getPedidoCentrosCusto])
 
     // FUNÇÃO PARA APLICAR FILTRO DE CENTRO DE CUSTO
     const aplicarFiltroCentroCusto = useCallback((pedidos: Order[]): Order[] => {
@@ -252,10 +267,11 @@ export default function PedidosPage() {
             }))
         }
         if (userRole === 'SEPOD') {
-            return userCentrosCusto.map(code => ({
+            const codes = userCentrosCusto.length > 0 ? userCentrosCusto : atitudeDefaultCodes
+            return codes.map(code => ({
                 code,
                 name: getCostCenterName(code)
-            }))
+            })).sort((a, b) => a.name.localeCompare(b.name))
         }
 
         const centrosSet = new Set<string>()
@@ -265,7 +281,7 @@ export default function PedidosPage() {
         return Array.from(centrosSet)
             .map(code => ({ code, name: getCostCenterName(code) }))
             .sort((a, b) => a.name.localeCompare(b.name))
-    }, [userRole, userCentrosCusto, allOrdersRaw, getPedidoCentrosCusto])
+    }, [userRole, userCentrosCusto, atitudeDefaultCodes, allOrdersRaw, getPedidoCentrosCusto])
 
     useEffect(() => {
         if (allOrdersRaw.length === 0) return
@@ -1053,12 +1069,14 @@ export default function PedidosPage() {
                     </DialogHeader>
                     {selectedOrder && (
                         <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-4">
-                            <TabsList className="grid w-full grid-cols-5">
+                            <TabsList className={`grid w-full ${isSepod ? 'grid-cols-4' : 'grid-cols-5'}`}>
                                 <TabsTrigger value="detalhes">Detalhes</TabsTrigger>
                                 <TabsTrigger value="itens">Itens</TabsTrigger>
                                 <TabsTrigger value="aprovacoes">Aprovações</TabsTrigger>
                                 <TabsTrigger value="entrega">Entrega</TabsTrigger>
-                                <TabsTrigger value="timeline">Linha do Tempo</TabsTrigger>
+                                {!isSepod && (
+                                    <TabsTrigger value="timeline">Linha do Tempo</TabsTrigger>
+                                )}
                             </TabsList>
 
                             <TabsContent value="detalhes" className="space-y-4 mt-4">
@@ -1247,31 +1265,33 @@ export default function PedidosPage() {
                                 ) : <p className="text-center py-4">Sem informação de entrega</p>}
                             </TabsContent>
 
-                            <TabsContent value="timeline" className="space-y-4 mt-4">
-                                <div className="flex items-center justify-between mb-4">
-                                    <h4 className="text-sm font-medium text-foreground">Histórico do Pedido</h4>
-                                    <div className="flex items-center gap-7">
-                                        <Button variant={timelineFilter === 'todos' ? 'default' : 'outline'} size="sm" onClick={() => setTimelineFilter('todos')} className="h-8">
-                                            <Layers className="w-3 h-3 mr-1" />
-                                            Todos
-                                        </Button>
-                                        <Button variant={timelineFilter === 'etapas' ? 'default' : 'outline'} size="sm" onClick={() => setTimelineFilter('etapas')} className="h-8">
-                                            <Flag className="w-3 h-3 mr-1" />
-                                            Por Etapas
-                                        </Button>
+                            {!isSepod && (
+                                <TabsContent value="timeline" className="space-y-4 mt-4">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <h4 className="text-sm font-medium text-foreground">Histórico do Pedido</h4>
+                                        <div className="flex items-center gap-7">
+                                            <Button variant={timelineFilter === 'todos' ? 'default' : 'outline'} size="sm" onClick={() => setTimelineFilter('todos')} className="h-8">
+                                                <Layers className="w-3 h-3 mr-1" />
+                                                Todos
+                                            </Button>
+                                            <Button variant={timelineFilter === 'etapas' ? 'default' : 'outline'} size="sm" onClick={() => setTimelineFilter('etapas')} className="h-8">
+                                                <Flag className="w-3 h-3 mr-1" />
+                                                Por Etapas
+                                            </Button>
+                                        </div>
                                     </div>
-                                </div>
-                                {selectedOrder.logs && selectedOrder.logs.length > 0 ? (
-                                    <div className="space-y-3">
-                                        {selectedOrder.logs.map((log, idx) => (
-                                            <div key={idx} className="border-l-2 border-primary/30 pl-4 py-2">
-                                                <p className="text-sm font-medium">{log.acao}</p>
-                                                <p className="text-xs text-muted-foreground">{log.autor} - {new Date(log.data).toLocaleString("pt-BR")}</p>
-                                            </div>
-                                        ))}
-                                    </div>
-                                ) : <p className="text-center py-4">Nenhum log encontrado</p>}
-                            </TabsContent>
+                                    {selectedOrder.logs && selectedOrder.logs.length > 0 ? (
+                                        <div className="space-y-3">
+                                            {selectedOrder.logs.map((log, idx) => (
+                                                <div key={idx} className="border-l-2 border-primary/30 pl-4 py-2">
+                                                    <p className="text-sm font-medium">{log.acao}</p>
+                                                    <p className="text-xs text-muted-foreground">{log.autor} - {new Date(log.data).toLocaleString("pt-BR")}</p>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : <p className="text-center py-4">Nenhum log encontrado</p>}
+                                </TabsContent>
+                            )}
                         </Tabs>
                     )}
                 </DialogContent>

@@ -26,16 +26,17 @@ export default withAuth(
             }
         }
 
-        // ROTAS QUE SEPOD NÃO PODE ACESSAR
+        // ROTAS QUE SEPOD NÃO PODE ACESSAR (redireciona para /pedidos)
         const rotasBloqueadasParaSEPOD = [
             '/fornecedores',
             '/admin',
-            '/configuracoes'
+            '/configuracoes',
+            '/dashboard'
         ]
 
-        if ( role === 'SEPOD')  {
+        if (role === 'SEPOD') {
             if (rotasBloqueadasParaSEPOD.some(rota => path.startsWith(rota))) {
-                return NextResponse.redirect(new URL('/dashboard', req.url))
+                return NextResponse.redirect(new URL('/pedidos', req.url))
             }
         }
 

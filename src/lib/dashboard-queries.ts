@@ -11,7 +11,7 @@ import {
   UnitMeasureData,
   AverageTimeMetric
 } from './dashboard-types'
-import { getCostCenterName } from './cost-centers-map'
+import { getCostCenterName, getCanonicalCostCenterCode, getAllEquivalentCostCenterCodes } from './cost-centers-map'
 import { getServerSession } from 'next-auth'
 import { authOptions } from './auth/auth'
 import { identificarEtapa } from './order-types'
@@ -156,11 +156,18 @@ export async function getDashboardSummaryFromAPI(filters?: DateFilter): Promise<
     // Filtrar pedidos
     let pedidosFiltrados = pedidos
     if (centrosCustoParaFiltrar.length > 0) {
+      const centrosExpandidos = Array.from(new Set(
+        centrosCustoParaFiltrar.flatMap(c => getAllEquivalentCostCenterCodes(c))
+      ))
       pedidosFiltrados = pedidos.filter((pedido: any) => {
         const itens = pedido.itensPedido || pedido.itens_pedido || pedido.itens || []
-        return itens.some((item: any) =>
-          centrosCustoParaFiltrar.includes(item.centroCusto || item.centro_custo || item.codigoCentroCusto)
+        const matchItem = itens.some((item: any) =>
+          centrosExpandidos.includes(item.centroCusto || item.centro_custo || item.codigoCentroCusto)
         )
+        if (matchItem) return true
+        if (pedido.subprojeto && centrosExpandidos.includes(pedido.subprojeto)) return true
+        if (pedido.centro_custo && centrosExpandidos.includes(pedido.centro_custo)) return true
+        return false
       })
       console.log(`  - Pedidos após filtro por centros: ${pedidosFiltrados.length}`)
     }
@@ -265,20 +272,23 @@ export async function getDashboardSummaryFromAPI(filters?: DateFilter): Promise<
     let availableCostCenters: CostCenter[] = []
 
     if (userRole === 'CONSULTOR' || userRole === 'SEPOD') {
-      // CONSULTOR vê APENAS os centros dele
-      availableCostCenters = userCentrosCusto.map(code => ({
+      // CONSULTOR e SEPOD veem apenas os centros canônicos permitidos
+      const uniqueCodes = Array.from(new Set(userCentrosCusto.map(getCanonicalCostCenterCode)))
+      availableCostCenters = uniqueCodes.map(code => ({
         code,
         name: getCostCenterName(code),
         totalValue: 0,
         orderCount: 0
-      }))
+      })).sort((a, b) => a.name.localeCompare(b.name))
     } else {
-      // SUPER_ADMIN e OPERADOR_SEDE veem todos os centros
+      // SUPER_ADMIN e OPERADOR_SEDE veem todos os centros canônicos
       const costCenterSet = new Set<string>()
       pedidos.forEach((pedido: any) => {
         pedido.itensPedido?.forEach((item: any) => {
-          if (item.centroCusto) costCenterSet.add(item.centroCusto)
+          if (item.centroCusto) costCenterSet.add(getCanonicalCostCenterCode(item.centroCusto))
         })
+        if (pedido.subprojeto) costCenterSet.add(getCanonicalCostCenterCode(pedido.subprojeto))
+        if (pedido.centro_custo) costCenterSet.add(getCanonicalCostCenterCode(pedido.centro_custo))
       })
 
       availableCostCenters = Array.from(costCenterSet)

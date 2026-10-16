@@ -30,14 +30,17 @@ export function AppSidebar() {
     const router = useRouter()
     const { role } = useAuth()
 
-    // Menu base para todos os usuários
-    const menuItems = [
-        {
+    // Menu base
+    const menuItems = []
+
+    // Dashboard - visível para todos exceto SEPOD por enquanto
+    if (role !== 'SEPOD') {
+        menuItems.push({
             title: "Dashboard",
             url: "/dashboard",
             icon: LayoutDashboard,
-        }
-    ]
+        })
+    }
 
     const podeVerFornecedores = role === 'SUPER_ADMIN' || role === 'OPERADOR_SEDE'
     const podeVerProdutos = role === 'SUPER_ADMIN' || role === 'OPERADOR_SEDE' || role === 'SEPOD'

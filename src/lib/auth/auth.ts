@@ -14,7 +14,12 @@ function filterAtitudeCenters(centrosCusto: string[]): string[] {
         .filter((center) => center.name.toUpperCase().includes('ATITUDE'))
         .map((center) => center.code)
 
-    return centrosCusto.filter(code => atitudeCodes.includes(code))
+    if (!centrosCusto || centrosCusto.length === 0) {
+        return atitudeCodes
+    }
+
+    const filtered = centrosCusto.filter(code => atitudeCodes.includes(code))
+    return filtered.length > 0 ? filtered : atitudeCodes
 }
 
 declare module 'next-auth' {

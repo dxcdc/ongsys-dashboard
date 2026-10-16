@@ -50,6 +50,15 @@ export default function LoginPage() {
             if (result?.error) {
                 setErro(result.error)
             } else {
+                try {
+                    const sessionRes = await fetch('/api/auth/session')
+                    const sessionData = await sessionRes.json()
+                    if (sessionData?.user?.role === 'SEPOD') {
+                        router.push('/pedidos')
+                        router.refresh()
+                        return
+                    }
+                } catch { }
                 router.push('/dashboard')
                 router.refresh()
             }

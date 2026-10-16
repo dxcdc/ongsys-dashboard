@@ -10,7 +10,15 @@ export default function HomePage() {
   const router = useRouter();
 
   useEffect(() => {
-    const timer = setTimeout(() => {
+    const timer = setTimeout(async () => {
+      try {
+        const sessionRes = await fetch('/api/auth/session');
+        const sessionData = await sessionRes.json();
+        if (sessionData?.user?.role === 'SEPOD') {
+          router.push('/pedidos');
+          return;
+        }
+      } catch { }
       router.push('/dashboard');
     }, 1000);
 
