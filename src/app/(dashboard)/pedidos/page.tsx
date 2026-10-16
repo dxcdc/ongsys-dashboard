@@ -127,6 +127,9 @@ export default function PedidosPage() {
     const [tipo, setTipo] = useState("todos")
     const [etapa, setEtapa] = useState("Todas")
     const [centroCusto, setCentroCusto] = useState("todos")
+    const [startDate, setStartDate] = useState("")
+    const [endDate, setEndDate] = useState("")
+    const [periodoPreset, setPeriodoPreset] = useState("todos")
     const [page, setPage] = useState(1)
     const [totalPages, setTotalPages] = useState(1)
     const [totalItems, setTotalItems] = useState(0)
@@ -135,6 +138,37 @@ export default function PedidosPage() {
     const [activeTab, setActiveTab] = useState("detalhes")
     const [timelineFilter, setTimelineFilter] = useState<'todos' | 'etapas'>('todos')
     const isSepod = user?.role === 'SEPOD'
+
+    const handlePresetChange = (preset: string) => {
+        setPeriodoPreset(preset)
+        const now = new Date()
+        if (preset === 'todos') {
+            setStartDate('')
+            setEndDate('')
+        } else if (preset === 'hoje') {
+            const hoje = now.toISOString().split('T')[0]
+            setStartDate(hoje)
+            setEndDate(hoje)
+        } else if (preset === '7d') {
+            const d = new Date()
+            d.setDate(d.getDate() - 7)
+            setStartDate(d.toISOString().split('T')[0])
+            setEndDate(now.toISOString().split('T')[0])
+        } else if (preset === '30d') {
+            const d = new Date()
+            d.setDate(d.getDate() - 30)
+            setStartDate(d.toISOString().split('T')[0])
+            setEndDate(now.toISOString().split('T')[0])
+        } else if (preset === 'mes_atual') {
+            const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0]
+            const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0]
+            setStartDate(firstDay)
+            setEndDate(lastDay)
+        } else if (preset === 'ano_atual') {
+            setStartDate(`${now.getFullYear()}-01-01`)
+            setEndDate(`${now.getFullYear()}-12-31`)
+        }
+    }
 
     // PEGAR DADOS DO USUÁRIO DA SESSÃO
     const userRole = user?.role
@@ -246,6 +280,24 @@ export default function PedidosPage() {
             })
         }
 
+        if (startDate) {
+            filtered = filtered.filter((order: Order) => {
+                const rawDate = order.data_pedido || order.dataEntregaEstimada
+                if (!rawDate) return false
+                const dateStr = String(rawDate).split('T')[0].split(' ')[0]
+                return dateStr >= startDate
+            })
+        }
+
+        if (endDate) {
+            filtered = filtered.filter((order: Order) => {
+                const rawDate = order.data_pedido || order.dataEntregaEstimada
+                if (!rawDate) return false
+                const dateStr = String(rawDate).split('T')[0].split(' ')[0]
+                return dateStr <= endDate
+            })
+        }
+
         // Ordenar os pedidos filtrados por ID (do menor para o maior)
         filtered.sort((a, b) => {
             const idA = a.id_requisicao || a.id_pedido || a.id
@@ -265,7 +317,7 @@ export default function PedidosPage() {
         setTotalItems(filtered.length)
         setTotalPages(Math.ceil(filtered.length / PAGE_SIZE))
         setPage(1)
-    }, [allOrdersRaw, search, status, tipo, etapa, centroCusto, aplicarFiltroCentroCusto, getPedidoCentrosCusto])
+    }, [allOrdersRaw, search, status, tipo, etapa, centroCusto, startDate, endDate, aplicarFiltroCentroCusto, getPedidoCentrosCusto])
 
     useEffect(() => {
         console.log('📊 [PedidosPage] Estado atual:', {
@@ -433,6 +485,63 @@ export default function PedidosPage() {
                     />
                 </div>
 
+                {/* Filtro de Período Rápido */}
+                <Select value={periodoPreset} onValueChange={handlePresetChange}>
+                    <SelectTrigger className="w-36">
+                        <Calendar className="w-4 h-4 mr-2 text-muted-foreground" />
+                        <SelectValue placeholder="Período" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="todos">Todo o período</SelectItem>
+                        <SelectItem value="hoje">Hoje</SelectItem>
+                        <SelectItem value="7d">Últimos 7 dias</SelectItem>
+                        <SelectItem value="30d">Últimos 30 dias</SelectItem>
+                        <SelectItem value="mes_atual">Este mês</SelectItem>
+                        <SelectItem value="ano_atual">Este ano</SelectItem>
+                        <SelectItem value="personalizado">Personalizado</SelectItem>
+                    </SelectContent>
+                </Select>
+
+                {/* Campos de Data De/Até */}
+                <div className="flex items-center gap-1.5 bg-card border border-input rounded-md px-2.5 h-10 shadow-sm text-xs">
+                    <span className="text-muted-foreground hidden sm:inline">De:</span>
+                    <input
+                        type="date"
+                        value={startDate}
+                        onChange={(e) => {
+                            setStartDate(e.target.value)
+                            setPeriodoPreset('personalizado')
+                        }}
+                        className="bg-transparent text-foreground focus:outline-none cursor-pointer text-xs"
+                        title="Data inicial"
+                    />
+                    <span className="text-muted-foreground">até</span>
+                    <input
+                        type="date"
+                        value={endDate}
+                        onChange={(e) => {
+                            setEndDate(e.target.value)
+                            setPeriodoPreset('personalizado')
+                        }}
+                        className="bg-transparent text-foreground focus:outline-none cursor-pointer text-xs"
+                        title="Data final"
+                    />
+                    {(startDate || endDate) && (
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setStartDate('')
+                                setEndDate('')
+                                setPeriodoPreset('todos')
+                            }}
+                            className="text-muted-foreground hover:text-foreground font-bold ml-1 px-1 rounded hover:bg-muted"
+                            title="Limpar período"
+                        >
+                            ×
+                        </button>
+                    )}
+                </div>
+
                 <Select value={centroCusto} onValueChange={setCentroCusto}>
                     <SelectTrigger className="w-48">
                         <Building2 className="w-4 h-4 mr-2" />
@@ -544,9 +653,15 @@ export default function PedidosPage() {
             )}
 
             {/* Indicadores de filtros ativos */}
-            {(search || status !== 'todos' || tipo !== 'todos' || etapa !== 'Todas' || centroCusto !== 'todos') && (
+            {(search || status !== 'todos' || tipo !== 'todos' || etapa !== 'Todas' || centroCusto !== 'todos' || startDate || endDate) && (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground flex-wrap">
                     <span>Filtros ativos:</span>
+                    {(startDate || endDate) && (
+                        <Badge variant="secondary" className="gap-1">
+                            Período: {startDate ? new Date(startDate + 'T12:00:00').toLocaleDateString('pt-BR') : 'Início'} até {endDate ? new Date(endDate + 'T12:00:00').toLocaleDateString('pt-BR') : 'Hoje'}
+                            <button onClick={() => { setStartDate(''); setEndDate(''); setPeriodoPreset('todos') }} className="ml-1 hover:text-foreground">×</button>
+                        </Badge>
+                    )}
                     {centroCusto !== 'todos' && (
                         <Badge variant="secondary" className="gap-1">
                             Centro: {getCostCenterName(centroCusto)}
