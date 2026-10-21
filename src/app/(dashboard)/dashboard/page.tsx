@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from "react"
+import { useState, useMemo } from "react"
 import { motion } from "framer-motion"
 import {
     Package,
@@ -12,18 +12,16 @@ import {
     Building2,
     AlertCircle,
     Clock,
-    BarChart3,
-    ChartArea
+    ChartArea,
+    RotateCcw
 } from "lucide-react"
 import { StatCard } from "@/src/components/StatCard"
-import { Skeleton } from "@/src/components/ui/skeleton"
-import { Badge } from "@/src/components/ui/badge"
 import { Button } from "@/src/components/ui/button"
 import { Input } from "@/src/components/ui/input"
-import { DashboardSummary, CostCenter } from "@/src/lib/dashboard-types"
-import { getCostCenterName } from '@/src/lib/cost-centers-map'
 import { useAuth } from '@/src/hooks/useAuth'
 import { LoadingScreen } from '@/src/components/ui/LoadingScreen'
+import { usePedidosData } from "@/src/contexts/PedidosContext"
+import { calculateDashboardSummary } from "@/src/lib/dashboard-calc"
 
 const formatCurrency = (v: number) =>
     new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v)
@@ -33,93 +31,45 @@ const formatNumber = (v: number) =>
 
 export default function DashboardPage() {
     const { isLoading: authLoading, isAuthenticated, user } = useAuth()
-    const [data, setData] = useState<DashboardSummary | null>(null)
-    const [loading, setLoading] = useState(true)
-    const [error, setError] = useState<string | null>(null)
-    const [partialData, setPartialData] = useState(false)
-    const userCentrosCusto = user?.centrosCusto ?? []
+    const {
+        pedidos,
+        loading,
+        isSyncing,
+        syncProgress,
+        loadError,
+        reload
+    } = usePedidosData()
 
-    // Verificar se o usuário é SEPOD
+    // Papel e permissões do usuário
     const userRole = user?.role
     const isSepod = userRole === 'SEPOD'
+    const userCentrosCusto = user?.centrosCusto ?? []
 
     // Estados para filtros
     const [startDate, setStartDate] = useState('')
     const [endDate, setEndDate] = useState('')
     const [selectedCostCenter, setSelectedCostCenter] = useState('todos')
-    const [availableCostCenters, setAvailableCostCenters] = useState<CostCenter[]>([])
     const [showDateFilter, setShowDateFilter] = useState(false)
 
-    // Função para buscar dados com filtros
-    const fetchData = async () => {
-        if (!isAuthenticated) return
+    // Cálculo em memória e reativo do resumo do Dashboard
+    const data = useMemo(() => {
+        if (!pedidos || pedidos.length === 0) return null
 
-        setLoading(true)
-        setPartialData(true)
-        setError(null)
-
-        let isTimeout = false
-        const controller = new AbortController()
-        const timeoutId = setTimeout(() => {
-            isTimeout = true
-            controller.abort()
-        }, 300000) // 5 minutos de tolerância para a primeira carga completa
-
-        try {
-            const params = new URLSearchParams()
-            if (startDate) params.append('startDate', startDate)
-            if (endDate) params.append('endDate', endDate)
-            if (selectedCostCenter && selectedCostCenter !== 'todos') {
-                params.append('costCenter', selectedCostCenter)
+        return calculateDashboardSummary(
+            pedidos,
+            {
+                startDate: startDate || undefined,
+                endDate: endDate || undefined,
+                costCenter: selectedCostCenter
+            },
+            {
+                role: userRole,
+                centrosCusto: userCentrosCusto
             }
+        )
+    }, [pedidos, startDate, endDate, selectedCostCenter, userRole, userCentrosCusto])
 
-            console.log('🔄 Buscando dados do dashboard...')
-
-            const response = await fetch(`/api/dashboard?${params.toString()}`, {
-                signal: controller.signal
-            })
-
-            clearTimeout(timeoutId)
-
-            if (!response.ok) {
-                const errorJson = await response.json().catch(() => ({}))
-                throw new Error(errorJson.error || `Erro ${response.status} ao carregar dados do dashboard`)
-            }
-
-            const json = await response.json()
-
-            console.log('✅ Dados recebidos com sucesso!')
-            setData(json)
-            setAvailableCostCenters(json.availableCostCenters || [])
-        } catch (err: any) {
-            clearTimeout(timeoutId)
-
-            if (err.name === 'AbortError') {
-                if (isTimeout) {
-                    console.warn('⚠️ Requisição excedeu o tempo limite')
-                    setError('A requisição demorou muito tempo para responder. O servidor pode estar lento. Tente novamente.')
-                } else {
-                    console.log('ℹ️ Requisição anterior cancelada devido a mudança de filtro ou navegação.')
-                    return
-                }
-            } else {
-                console.error('❌ Erro no fetch do dashboard:', err)
-                setError(err instanceof Error ? err.message : 'Erro desconhecido')
-            }
-        } finally {
-            if (!isTimeout) {
-                setLoading(false)
-                setPartialData(false)
-            }
-        }
-    }
-
-    // Buscar dados quando os filtros mudarem e autenticação estiver pronta
-    useEffect(() => {
-        if (isAuthenticated) {
-            fetchData()
-        }
-    }, [startDate, endDate, selectedCostCenter, isAuthenticated])
+    const availableCostCenters = data?.availableCostCenters || []
 
     // Aplicar filtro de data
     const handleApplyFilter = () => {
@@ -138,17 +88,21 @@ export default function DashboardPage() {
         setShowDateFilter(false)
     }
 
-    // Mostrar loading da autenticação ou de dados do dashboard
+    // Tela de carregamento apenas se não houver NENHUM dado em cache nem na memória
     if (authLoading || (loading && !data)) {
         return (
             <LoadingScreen
                 variant="skeleton"
                 title="Carregando Dashboard..."
                 description="Processando resumos de pedidos, fornecedores e estatísticas financeiras."
+                currentProgress={syncProgress.current}
+                totalProgress={syncProgress.total || 36}
             />
         )
     }
-    if (error) {
+
+    // Tela de erro caso não haja dados e ocorra falha
+    if (loadError && !data) {
         return (
             <div className="p-6">
                 <div className="bg-destructive/10 border border-destructive/30 text-destructive px-4 py-3 rounded-lg">
@@ -156,11 +110,11 @@ export default function DashboardPage() {
                         <AlertCircle className="w-5 h-5" />
                         <h2 className="font-semibold">Erro ao carregar dashboard</h2>
                     </div>
-                    <p className="text-sm mt-1">{error}</p>
+                    <p className="text-sm mt-1">{loadError}</p>
                     <Button
                         variant="outline"
                         className="mt-3"
-                        onClick={() => fetchData()}
+                        onClick={() => reload(true)}
                     >
                         Tentar novamente
                     </Button>
@@ -173,10 +127,18 @@ export default function DashboardPage() {
 
     return (
         <div className="space-y-6 animate-fade-in p-6">
-            {/* Indicador de carregamento parcial */}
-            {partialData && (
-                <div className="bg-yellow-500/10 border border-yellow-500/30 text-yellow-600 dark:text-yellow-400 p-2 rounded-lg text-sm text-center">
-                    ⚠️ Atualizando dados... Esta operação pode levar alguns segundos.
+            {/* Indicador de sincronização progressiva em segundo plano */}
+            {isSyncing && (
+                <div className="bg-primary/10 border border-primary/20 text-primary px-3 py-2 rounded-lg text-xs flex items-center justify-between animate-pulse">
+                    <div className="flex items-center gap-2">
+                        <RotateCcw className="w-3.5 h-3.5 animate-spin" />
+                        <span>
+                            Sincronizando pedidos em segundo plano... {syncProgress.percentage}% (Página {syncProgress.current} de {syncProgress.total})
+                        </span>
+                    </div>
+                    <span className="text-muted-foreground text-[11px] hidden sm:inline">
+                        Gráficos e estatísticas atualizando em tempo real
+                    </span>
                 </div>
             )}
 
@@ -184,11 +146,25 @@ export default function DashboardPage() {
             <div className="flex items-center justify-between">
                 <div>
                     <h1 className="text-2xl font-bold text-foreground">Dashboard</h1>
-                    <p className="text-muted-foreground">Visão geral do sistema</p>
+                    <p className="text-muted-foreground">
+                        Visão geral do sistema ({pedidos.length.toLocaleString('pt-BR')} pedidos carregados)
+                    </p>
                 </div>
 
-                {/* Botão de filtro */}
+                {/* Botões de ação e filtro */}
                 <div className="flex items-center gap-2">
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => reload(true)}
+                        disabled={isSyncing}
+                        className="flex items-center gap-2"
+                        title="Recarregar pedidos"
+                    >
+                        <RotateCcw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-primary' : ''}`} />
+                        <span className="hidden sm:inline">Recarregar</span>
+                    </Button>
+
                     <Button
                         variant="outline"
                         size="sm"
@@ -272,16 +248,16 @@ export default function DashboardPage() {
             )}
 
             {/* Cards de estatísticas principais */}
-             {isSepod ? (
+            {isSepod ? (
                 // Layout para SEPOD - cards ocupam 2 colunas
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <StatCard
-                            title="Total de Requisições de Produtos"
-                            value={formatNumber(data.totalProductOrders)}
-                            subtitle="Quantidade de pedidos de produto"
-                            icon={Package}
-                            variant="info"
-                        />
+                    <StatCard
+                        title="Total de Requisições de Produtos"
+                        value={formatNumber(data.totalProductOrders)}
+                        subtitle="Quantidade de pedidos de produto"
+                        icon={Package}
+                        variant="info"
+                    />
                     <StatCard
                         title="Total de Requisições de Serviço"
                         value={formatNumber(data.totalServiceOrders)}
@@ -434,7 +410,6 @@ export default function DashboardPage() {
                     </div>
                 </div>
             </motion.div>
-
         </div>
     )
 }

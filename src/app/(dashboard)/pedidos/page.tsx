@@ -52,50 +52,16 @@ import {
     getDataAprovacaoCotacao,
     getDataFinalizacao,
     getEtapaDateInfo,
-    type EtapaEstatistica
+    type EtapaEstatistica,
+    type Order
 } from "@/src/lib/order-types"
 import { useAuth } from "@/src/hooks/useAuth"
-import { usePedidos } from "@/src/contexts/PedidosContext"
+import { usePedidosData } from "@/src/contexts/PedidosContext"
 import { getCostCenterName, getAtitudeOnlyCostCenters, getCanonicalCostCenterCode } from "@/src/lib/cost-centers-map"
 import { exportOrdersToExcel } from "@/src/lib/export-orders-excel"
 import { LoadingScreen } from "@/src/components/ui/LoadingScreen"
 
 const PAGE_SIZE = 20
-
-interface Order {
-    id: number | string
-    id_requisicao: string
-    id_pedido?: string
-    titulo: string
-    status_pedido: string
-    etapa?: string
-    fornecedor_nome: string
-    fornecedor_documento?: string
-    requisitante?: string
-    solicitante?: string
-    comprador?: string
-    responsavel_cotacao?: string
-    data_pedido: string
-    dataEntregaEstimada?: string
-    tipo_pedido: string
-    tipo_requisicao?: string
-    subprojeto?: string
-    valor_total: number
-    local_entrega?: any
-    itens_pedido?: any[]
-    logs?: any[]
-    descricao_pedido?: string
-    justificativa_compra?: string
-    fonte_pagadora?: string
-    conta_plano_financeiro?: string
-    cancelamento?: {
-        data?: string
-        usuario?: string
-        justificativa?: string
-    } | null
-    aprovacoes?: any[]
-    aprovacoesCotacao?: any[]
-}
 
 const getStatusColor = (status: string): string => {
     const colors: Record<string, string> = {
@@ -140,7 +106,7 @@ const getEtapaHeaderLabel = (selectedEtapa: string) => {
 
 export default function PedidosPage() {
     const { isLoading: authLoading, isAuthenticated, user } = useAuth()
-    const { data: allOrdersRaw, loading, loadingProgress, loadError, reload } = usePedidos()
+    const { data: allOrdersRaw, loading, isSyncing, syncProgress, loadError, reload } = usePedidosData()
     const [filteredOrders, setFilteredOrders] = useState<Order[]>([])
     const [search, setSearch] = useState("")
     const [status, setStatus] = useState("todos")
@@ -460,7 +426,7 @@ export default function PedidosPage() {
                 <div className="bg-destructive/10 border border-destructive/30 text-destructive px-4 py-3 rounded-lg max-w-md">
                     <h2 className="font-semibold">Erro ao carregar pedidos</h2>
                     <p className="text-sm mt-1">{loadError}</p>
-                    <Button variant="outline" className="mt-3" onClick={reload}>
+                    <Button variant="outline" className="mt-3" onClick={() => reload()}>
                         Tentar novamente
                     </Button>
                 </div>
@@ -468,20 +434,35 @@ export default function PedidosPage() {
         )
     }
 
-    if (loading) {
+    if (loading && allOrdersRaw.length === 0) {
         return (
             <LoadingScreen
                 variant="skeleton"
                 title="Carregando pedidos..."
                 description="Buscando e organizando a lista de requisições e ordens de compra."
-                currentProgress={loadingProgress.current}
-                totalProgress={loadingProgress.total}
+                currentProgress={syncProgress.current}
+                totalProgress={syncProgress.total || 36}
             />
         )
     }
 
     return (
         <div className="space-y-5 animate-fade-in p-6">
+            {/* Indicador de sincronização progressiva em segundo plano */}
+            {isSyncing && (
+                <div className="bg-primary/10 border border-primary/20 text-primary px-3 py-2 rounded-lg text-xs flex items-center justify-between animate-pulse">
+                    <div className="flex items-center gap-2">
+                        <RotateCcw className="w-3.5 h-3.5 animate-spin" />
+                        <span>
+                            Sincronizando pedidos em segundo plano... {syncProgress.percentage}% (Página {syncProgress.current} de {syncProgress.total})
+                        </span>
+                    </div>
+                    <span className="text-muted-foreground text-[11px] hidden sm:inline">
+                        Tabela e etapas atualizando em tempo real
+                    </span>
+                </div>
+            )}
+
             <div className="flex items-center justify-between">
                 <div>
                     <h1 className="text-2xl font-bold text-foreground">Pedidos</h1>
@@ -498,11 +479,11 @@ export default function PedidosPage() {
                 <div className="flex items-center gap-2">
                     <Button
                         variant="outline"
-                        onClick={() => reload()}
-                        disabled={loading}
+                        onClick={() => reload(true)}
+                        disabled={isSyncing}
                         title="Recarregar dados da API OngSys"
                     >
-                        <RotateCcw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                        <RotateCcw className={`w-4 h-4 ${isSyncing ? 'animate-spin text-primary' : ''}`} />
                         <span className="hidden sm:inline ml-2">Recarregar</span>
                     </Button>
 
@@ -954,7 +935,7 @@ export default function PedidosPage() {
                                             <td className="p-3 hidden lg:table-cell text-muted-foreground align-top whitespace-nowrap">
                                                 {order.data_pedido ? new Date(order.data_pedido).toLocaleDateString("pt-BR") : '---'}
                                             </td>
-                                            <td className="p-3 hidden lg:table-cell text-muted-foreground align-top whitespace-nowrap text-xs">
+                                            <td className="p-3 hidden lg:table-cell text-muted-foreground align-top whitespace-nowrap">
                                                 {(() => {
                                                     const etapaDateInfo = getEtapaDateInfo(order, etapaAtual)
                                                     const formattedDate = etapaDateInfo?.date

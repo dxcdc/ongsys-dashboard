@@ -1,6 +1,6 @@
 import * as XLSX from 'xlsx'
-import { Order } from '@/src/types/order'
 import {
+    Order,
     identificarEtapaAtual,
     getEtapaDateInfo,
     getDataEntradaCotacao,
