@@ -39,8 +39,8 @@ export interface PedidosContextValue {
 
 const PedidosContext = createContext<PedidosContextValue | null>(null)
 
-const BATCH_SIZE = 4
-const BATCH_DELAY_MS = 150
+const BATCH_SIZE = 6
+const BATCH_DELAY_MS = 60
 
 /**
  * Consolida pedidos e requisições em memória:
@@ -145,8 +145,11 @@ export function PedidosProvider({ children }: { children: ReactNode }) {
             })
 
             requisicoesP1.data.forEach((req: any) => {
-                if (req.idRequisicao !== undefined && req.idRequisicao !== null) {
-                    requisicoesMapRef.current.set(String(req.idRequisicao), req)
+                const reqId = req.id_requisicao !== undefined && req.id_requisicao !== null && req.id_requisicao !== ''
+                    ? String(req.id_requisicao)
+                    : (req.idRequisicao !== undefined && req.idRequisicao !== null ? String(req.idRequisicao) : '')
+                if (reqId) {
+                    requisicoesMapRef.current.set(reqId, req)
                 }
             })
 
@@ -198,8 +201,11 @@ export function PedidosProvider({ children }: { children: ReactNode }) {
                             })
                         } else {
                             res.value.data.forEach((req: any) => {
-                                if (req.idRequisicao !== undefined && req.idRequisicao !== null) {
-                                    requisicoesMapRef.current.set(String(req.idRequisicao), req)
+                                const reqId = req.id_requisicao !== undefined && req.id_requisicao !== null && req.id_requisicao !== ''
+                                    ? String(req.id_requisicao)
+                                    : (req.idRequisicao !== undefined && req.idRequisicao !== null ? String(req.idRequisicao) : '')
+                                if (reqId) {
+                                    requisicoesMapRef.current.set(reqId, req)
                                 }
                             })
                         }

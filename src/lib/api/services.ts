@@ -80,11 +80,12 @@ export const requisicoesService = {
                     }
                 }
 
-                // Deduplicar requisições por idRequisicao
+                // Deduplicar requisições por idRequisicao ou id_requisicao
                 const seen = new Set<string>()
                 const deduplicatedData: any[] = []
                 data.forEach((r: any) => {
-                    const key = r.idRequisicao ? String(r.idRequisicao) : null
+                    const reqId = r.id_requisicao ?? r.idRequisicao
+                    const key = reqId ? String(reqId) : null
                     if (key) {
                         if (!seen.has(key)) {
                             seen.add(key)
@@ -164,7 +165,9 @@ export const pedidosService = {
             const seen = new Set<string>()
             const deduplicatedData: any[] = []
             data.forEach((p: any) => {
-                const key = p.idPedido ? `p_${p.idPedido}` : (p.idRequisicao ? `r_${p.idRequisicao}` : null)
+                const pedId = p.id_pedido ?? p.idPedido
+                const reqId = p.id_requisicao ?? p.idRequisicao
+                const key = pedId ? `p_${pedId}` : (reqId ? `r_${reqId}` : null)
                 if (key) {
                     if (!seen.has(key)) {
                         seen.add(key)
@@ -212,11 +215,12 @@ export const pedidosService = {
 
                 console.log(`📦 Cruzando ${pedidosRaw.length} pedidos com ${requisicoesRaw.length} requisições...`)
 
-                // Mapear requisições por idRequisicao
+                // Mapear requisições por idRequisicao ou id_requisicao
                 const reqMap = new Map<string, any>()
                 requisicoesRaw.forEach((req: any) => {
-                    if (req.idRequisicao !== undefined && req.idRequisicao !== null) {
-                        reqMap.set(String(req.idRequisicao), req)
+                    const reqId = req.id_requisicao ?? req.idRequisicao
+                    if (reqId !== undefined && reqId !== null && reqId !== '') {
+                        reqMap.set(String(reqId), req)
                     }
                 })
 
@@ -226,7 +230,8 @@ export const pedidosService = {
                 // 1. Processar pedidos existentes (Etapas 5 e 6, ou pedidos vinculados)
                 pedidosRaw.forEach((p: any) => {
                     const cloned = { ...p }
-                    const reqId = cloned.idRequisicao ? String(cloned.idRequisicao) : null
+                    const rawReqId = cloned.id_requisicao ?? cloned.idRequisicao
+                    const reqId = rawReqId ? String(rawReqId) : null
 
                     if (reqId && reqMap.has(reqId)) {
                         matchedReqIds.add(reqId)
@@ -251,14 +256,14 @@ export const pedidosService = {
                         }
 
                         // Enriquecer com dados de requisição
-                        cloned.solicitante = req.solicitante || cloned.requisitante
-                        cloned.requisitante = cloned.requisitante || req.solicitante
-                        cloned.responsavelCotacao = req.responsavelCotacao || cloned.comprador
-                        cloned.comprador = cloned.comprador || req.responsavelCotacao
+                        cloned.solicitante = req.solicitante || req.requisitante || cloned.requisitante
+                        cloned.requisitante = cloned.requisitante || req.solicitante || req.requisitante
+                        cloned.responsavelCotacao = req.responsavel_cotacao || req.responsavelCotacao || cloned.comprador
+                        cloned.comprador = cloned.comprador || req.responsavel_cotacao || req.responsavelCotacao
                         cloned.aprovacoes = req.aprovacoes || []
-                        cloned.aprovacoesCotacao = req.aprovacoesCotacao || []
-                        cloned.subprojeto = cloned.subprojeto || req.subprojeto || req.centroCustoProjeto
-                        cloned.tipoRequisicao = req.tipoRequisicao || cloned.tipoPedido
+                        cloned.aprovacoesCotacao = req.aprovacoes_cotacao || req.aprovacoesCotacao || []
+                        cloned.subprojeto = cloned.subprojeto || req.subprojeto || req.centro_custo_projeto || req.centroCustoProjeto
+                        cloned.tipoRequisicao = req.tipo_requisicao || req.tipoRequisicao || cloned.tipoPedido
 
                         // Se pedido não possui logs mas requisição possui, enriquecer
                         if ((!cloned.logs || cloned.logs.length === 0) && req.logs && req.logs.length > 0) {
@@ -278,7 +283,8 @@ export const pedidosService = {
 
                 // 2. Incluir requisições sem pedido associado (completando Etapas 1 até 4 e requisições canceladas/órfãs)
                 requisicoesRaw.forEach((req: any) => {
-                    const reqId = String(req.idRequisicao)
+                    const rawReqId = req.id_requisicao ?? req.idRequisicao
+                    const reqId = String(rawReqId || '')
                     if (matchedReqIds.has(reqId)) return
 
                     const hasCancelamento = req.cancelamento !== null && req.cancelamento !== undefined
@@ -289,10 +295,17 @@ export const pedidosService = {
                     const etapaStr = isCancelado ? 'CANCELADO' : `ETAPA 0${req.etapa || 1}`
                     const statusStr = isCancelado ? (req.status || 'Cancelado') : (req.status || `Etapa 0${req.etapa || 1}`)
 
+                    const rawItens = req.itens || req.itensPedido || req.itens_pedido || []
+                    const valorTotal = typeof req.valor_global === 'number'
+                        ? req.valor_global
+                        : (typeof req.valorGlobal === 'number'
+                            ? req.valorGlobal
+                            : (parseFloat(req.valor_global || req.valorGlobal) || 0))
+
                     const syntheticOrder = {
-                        id: `r_${req.idRequisicao}`,
-                        idRequisicao: String(req.idRequisicao),
-                        id_requisicao: String(req.idRequisicao),
+                        id: `r_${reqId}`,
+                        idRequisicao: reqId,
+                        id_requisicao: reqId,
                         idPedido: '',
                         id_pedido: '',
                         titulo: req.titulo || '',
@@ -306,43 +319,51 @@ export const pedidosService = {
                         },
                         fornecedor_nome: isCancelado ? 'Cancelado antes do pedido' : 'Em cotação / aprovação',
                         fornecedor_documento: '',
-                        requisitante: req.solicitante || '',
-                        solicitante: req.solicitante || '',
-                        comprador: req.responsavelCotacao || '',
-                        responsavelCotacao: req.responsavelCotacao || '',
-                        dataPedido: req.dataRequisicao || '',
-                        data_pedido: req.dataRequisicao || '',
-                        dataEntregaEstimada: req.dataPrevistaEntrega || '',
-                        tipoPedido: req.tipoRequisicao || 'produto',
-                        tipo_pedido: req.tipoRequisicao || 'produto',
-                        tipoRequisicao: req.tipoRequisicao || 'produto',
-                        subprojeto: req.subprojeto || req.centroCustoProjeto || '',
-                        valorTotal: req.valorGlobal || 0,
-                        valor_total: req.valorGlobal || 0,
+                        requisitante: req.solicitante || req.requisitante || '',
+                        solicitante: req.solicitante || req.requisitante || '',
+                        comprador: req.responsavel_cotacao || req.responsavelCotacao || '',
+                        responsavelCotacao: req.responsavel_cotacao || req.responsavelCotacao || '',
+                        dataPedido: req.data_requisicao || req.dataRequisicao || '',
+                        data_pedido: req.data_requisicao || req.dataRequisicao || '',
+                        dataEntregaEstimada: req.data_prevista_entrega || req.dataPrevistaEntrega || '',
+                        tipoPedido: req.tipo_requisicao || req.tipoRequisicao || 'produto',
+                        tipo_pedido: req.tipo_requisicao || req.tipoRequisicao || 'produto',
+                        tipoRequisicao: req.tipo_requisicao || req.tipoRequisicao || 'produto',
+                        subprojeto: req.subprojeto || req.centro_custo_projeto || req.centroCustoProjeto || '',
+                        valorTotal: valorTotal,
+                        valor_total: valorTotal,
                         cancelamento: req.cancelamento || null,
                         aprovacoes: req.aprovacoes || [],
-                        aprovacoesCotacao: req.aprovacoesCotacao || [],
-                        itensPedido: (req.itens || []).map((it: any) => ({
-                            idProduto: it.idProduto,
-                            idServico: it.idServico,
-                            nomeProduto: it.nome,
-                            nomeServico: it.nome,
-                            quantidade: it.quantidade,
-                            valorUnitario: it.valorUnitario,
-                            valorTotal: it.valorTotal,
-                            centroCusto: req.centroCustoProjeto || req.subprojeto || '',
+                        aprovacoesCotacao: req.aprovacoes_cotacao || req.aprovacoesCotacao || [],
+                        itensPedido: rawItens.map((it: any) => ({
+                            idProduto: it.id_produto ?? it.idProduto,
+                            idServico: it.id_servico ?? it.idServico,
+                            nomeProduto: it.nome_produto || it.nome || it.descricao || '',
+                            nomeServico: it.nome_servico || it.nome || it.descricao || '',
+                            quantidade: parseFloat(it.quantidade) || 0,
+                            valorUnitario: it.valor_unitario !== null && it.valor_unitario !== undefined
+                                ? parseFloat(it.valor_unitario)
+                                : (it.valorUnitario !== null && it.valorUnitario !== undefined ? parseFloat(it.valorUnitario) : null),
+                            valorTotal: it.valor_total !== null && it.valor_total !== undefined
+                                ? parseFloat(it.valor_total)
+                                : (it.valorTotal !== null && it.valorTotal !== undefined ? parseFloat(it.valorTotal) : null),
+                            centroCusto: it.centro_custo || it.centroCusto || req.centro_custo_projeto || req.centroCustoProjeto || req.subprojeto || '',
                             grupo: it.grupo || 'Geral',
                             controleEntregas: []
                         })),
-                        itens_pedido: (req.itens || []).map((it: any) => ({
-                            idProduto: it.idProduto,
-                            idServico: it.idServico,
-                            nomeProduto: it.nome,
-                            nomeServico: it.nome,
-                            quantidade: it.quantidade,
-                            valorUnitario: it.valorUnitario,
-                            valorTotal: it.valorTotal,
-                            centroCusto: req.centroCustoProjeto || req.subprojeto || '',
+                        itens_pedido: rawItens.map((it: any) => ({
+                            idProduto: it.id_produto ?? it.idProduto,
+                            idServico: it.id_servico ?? it.idServico,
+                            nomeProduto: it.nome_produto || it.nome || it.descricao || '',
+                            nomeServico: it.nome_servico || it.nome || it.descricao || '',
+                            quantidade: parseFloat(it.quantidade) || 0,
+                            valorUnitario: it.valor_unitario !== null && it.valor_unitario !== undefined
+                                ? parseFloat(it.valor_unitario)
+                                : (it.valorUnitario !== null && it.valorUnitario !== undefined ? parseFloat(it.valorUnitario) : null),
+                            valorTotal: it.valor_total !== null && it.valor_total !== undefined
+                                ? parseFloat(it.valor_total)
+                                : (it.valorTotal !== null && it.valorTotal !== undefined ? parseFloat(it.valorTotal) : null),
+                            centroCusto: it.centro_custo || it.centroCusto || req.centro_custo_projeto || req.centroCustoProjeto || req.subprojeto || '',
                             grupo: it.grupo || 'Geral',
                             controleEntregas: []
                         })),
@@ -414,7 +435,7 @@ export const contasPagarService = {
             const primeiraPagina = await this.listar(filters, page)
             data.push(...(primeiraPagina.data || []))
 
-            totalPages = Math.ceil((primeiraPagina.totalItems || 0) / 100)
+            totalPages = primeiraPagina.totalPages || Math.ceil((primeiraPagina.totalItems || 0) / 20)
             console.log(`📊 Total de páginas de contas a pagar: ${totalPages} (${primeiraPagina.totalItems} registros)`)
 
             for (let p = 2; p <= totalPages; p++) {
@@ -478,7 +499,7 @@ export const contasReceberService = {
             const primeiraPagina = await this.listar(filters, page)
             data.push(...(primeiraPagina.data || []))
 
-            totalPages = Math.ceil((primeiraPagina.totalItems || 0) / 100)
+            totalPages = primeiraPagina.totalPages || Math.ceil((primeiraPagina.totalItems || 0) / 20)
             console.log(`📊 Total de páginas de contas a receber: ${totalPages} (${primeiraPagina.totalItems} registros)`)
 
             for (let p = 2; p <= totalPages; p++) {
@@ -563,11 +584,11 @@ export const fornecedoresService = {
                     }
                 }
 
-                // Deduplicar fornecedores por ID / código / documento
+                // Deduplicar fornecedores por ID / id_ongsys / código / documento
                 const seen = new Set<string>()
                 const deduplicatedData: any[] = []
                 data.forEach((f: any) => {
-                    const key = f.id ? `id_${f.id}` : (f.codigo ? `cod_${f.codigo}` : (f.documento ? `doc_${f.documento}` : null))
+                    const key = f.id ? `id_${f.id}` : (f.id_ongsys ? `id_${f.id_ongsys}` : (f.codigo ? `cod_${f.codigo}` : (f.documento ? `doc_${f.documento}` : null)))
                     if (key) {
                         if (!seen.has(key)) {
                             seen.add(key)
@@ -658,11 +679,11 @@ export const produtosService = {
                     }
                 }
 
-                // Deduplicar produtos por ID
+                // Deduplicar produtos por ID ou id_ongsys
                 const seen = new Set<string>()
                 const deduplicatedData: any[] = []
                 data.forEach((p: any) => {
-                    const key = p.id ? `id_${p.id}` : (p.codigo ? `cod_${p.codigo}` : null)
+                    const key = p.id ? `id_${p.id}` : (p.id_ongsys ? `id_${p.id_ongsys}` : (p.codigo ? `cod_${p.codigo}` : null))
                     if (key) {
                         if (!seen.has(key)) {
                             seen.add(key)

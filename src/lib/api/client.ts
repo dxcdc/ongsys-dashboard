@@ -34,7 +34,9 @@ function buildUrl(endpoint: string, params: ApiParams): string {
         }
     })
     const baseUrl = API_BASE_URL.replace(/\/$/, '')
-    const path = endpoint.startsWith('/') ? endpoint : `/${endpoint}`
+    const cleanEndpoint = endpoint.replace(/^\/+|\/+$/g, '')
+    // Assegurar barra final para evitar redirecionamento HTTP 301 nas rotas do CDC Core
+    const path = cleanEndpoint ? `/${cleanEndpoint}/` : '/'
     const queryString = searchParams.toString()
     return `${baseUrl}${path}${queryString ? '?' + queryString : ''}`
 }
@@ -85,11 +87,24 @@ export async function apiGet<T>(
         }
 
         const data = await response.json()
+        const rawList = Array.isArray(data.data) ? data.data : (Array.isArray(data.dados) ? data.dados : (Array.isArray(data) ? data : []))
+        const totalItems = typeof data.totalRecords === 'number'
+            ? data.totalRecords
+            : (typeof data.paginacao?.total_registros === 'number'
+                ? data.paginacao.total_registros
+                : rawList.length)
+        const pageSize = data.paginacao?.tamanho_pagina ?? data.pageSize ?? 20
+        const totalPages = typeof data.totalPages === 'number'
+            ? data.totalPages
+            : (typeof data.paginacao?.total_paginas === 'number'
+                ? data.paginacao.total_paginas
+                : (totalItems > 0 ? Math.ceil(totalItems / pageSize) : 1))
+
         return {
-            data: data.data || [],
-            totalPages: Math.ceil((data.totalRecords || 0) / 100),
-            currentPage: params.pageNumber || 1,
-            totalItems: data.totalRecords || 0
+            data: rawList,
+            totalPages: Math.max(1, totalPages),
+            currentPage: Number(params.pageNumber) || 1,
+            totalItems: totalItems
         }
     } catch (error: any) {
         if (error.name === 'AbortError') {

@@ -229,131 +229,6 @@ export default function PedidosPage() {
             .sort((a, b) => a.name.localeCompare(b.name))
     }, [userRole, userCentrosCusto, atitudeDefaultCodes, allOrdersRaw, getPedidoCentrosCusto])
 
-    useEffect(() => {
-        if (allOrdersRaw.length === 0) return
-
-        // Deduplicar pedidos brutos por id_pedido/id_requisicao
-        const seen = new Set<string>()
-        const uniqueRaw: Order[] = []
-        allOrdersRaw.forEach(order => {
-            const reqId = order.id_requisicao || (order as any).idRequisicao
-            const pedId = order.id_pedido || (order as any).idPedido
-            const key = pedId
-                ? `p_${pedId}`
-                : (reqId ? `r_${reqId}` : `id_${order.id}`)
-            if (!seen.has(key)) {
-                seen.add(key)
-                uniqueRaw.push(order)
-            }
-        })
-
-        let filtered = [...uniqueRaw]
-        filtered = aplicarFiltroCentroCusto(filtered)
-
-        if (centroCusto !== 'todos') {
-            filtered = filtered.filter((pedido: Order) =>
-                getPedidoCentrosCusto(pedido).includes(centroCusto)
-            )
-        }
-
-        if (search) {
-            const searchLower = search.toLowerCase()
-            filtered = filtered.filter((order: Order) => {
-                const titulo = order.titulo ? String(order.titulo).toLowerCase() : ''
-                const idRequisicao = (order.id_requisicao || (order as any).idRequisicao) ? String(order.id_requisicao || (order as any).idRequisicao).toLowerCase() : ''
-                const idPedido = (order.id_pedido || (order as any).idPedido) ? String(order.id_pedido || (order as any).idPedido).toLowerCase() : ''
-                const fornecedor = order.fornecedor_nome ? String(order.fornecedor_nome).toLowerCase() : ''
-
-                return titulo.includes(searchLower) ||
-                    idRequisicao.includes(searchLower) ||
-                    idPedido.includes(searchLower) ||
-                    fornecedor.includes(searchLower)
-            })
-        }
-
-        if (status !== 'todos') {
-            filtered = filtered.filter((order: Order) => order.status_pedido === status)
-        }
-
-        if (tipo !== 'todos') {
-            filtered = filtered.filter((order: Order) => order.tipo_pedido === tipo)
-        }
-
-        if (etapa !== 'Todas') {
-            filtered = filtered.filter((order: Order) => {
-                const etapaAtual = identificarEtapaAtual(order)
-                return etapaAtual === etapa
-            })
-        }
-
-        if (startDate) {
-            filtered = filtered.filter((order: Order) => {
-                const rawDate = order.data_pedido || order.dataEntregaEstimada
-                if (!rawDate) return false
-                const dateStr = String(rawDate).split('T')[0].split(' ')[0]
-                return dateStr >= startDate
-            })
-        }
-
-        if (endDate) {
-            filtered = filtered.filter((order: Order) => {
-                const rawDate = order.data_pedido || order.dataEntregaEstimada
-                if (!rawDate) return false
-                const dateStr = String(rawDate).split('T')[0].split(' ')[0]
-                return dateStr <= endDate
-            })
-        }
-
-        // Ordenar os pedidos filtrados por ID (do menor para o maior)
-        filtered.sort((a, b) => {
-            const idA = a.id_requisicao || a.id_pedido || a.id
-            const idB = b.id_requisicao || b.id_pedido || b.id
-
-            const numA = parseInt(String(idA || '0').replace(/\D/g, '')) || 0
-            const numB = parseInt(String(idB || '0').replace(/\D/g, '')) || 0
-
-            if (numA !== numB) {
-                return numA - numB
-            }
-
-            return String(idA || '').localeCompare(String(idB || ''), undefined, { numeric: true })
-        })
-
-        setFilteredOrders(filtered)
-        setTotalItems(filtered.length)
-        setTotalPages(Math.ceil(filtered.length / PAGE_SIZE))
-        setPage(1)
-    }, [allOrdersRaw, search, status, tipo, etapa, centroCusto, startDate, endDate, aplicarFiltroCentroCusto, getPedidoCentrosCusto])
-
-    useEffect(() => {
-        console.log('📊 [PedidosPage] Estado atual:', {
-            dataLength: allOrdersRaw.length,
-            loading,
-            loadError,
-            hasData: allOrdersRaw.length > 0
-        })
-    }, [allOrdersRaw, loading, loadError])
-
-    // Estatísticas de etapas (filtrando apenas etapas visíveis)
-    const etapasEstatisticas = useMemo(() => {
-        if (filteredOrders.length === 0) return []
-        const etapasVisiveis = ETAPAS.filter(e => !e.oculta)
-        const estatisticas: EtapaEstatistica[] = etapasVisiveis.map(etapa => ({
-            nome: etapa.nome,
-            descricao: etapa.descricao,
-            quantidade: 0,
-            ordem: etapa.ordem
-        }))
-        filteredOrders.forEach((order: Order) => {
-            const etapaAtual = identificarEtapaAtual(order)
-            if (etapaAtual) {
-                const etapaInfo = estatisticas.find(e => e.nome === etapaAtual)
-                if (etapaInfo) etapaInfo.quantidade++
-            }
-        })
-        return estatisticas
-    }, [filteredOrders])
-
     const todosPermitidos = useMemo(() => {
         const seen = new Set<string>()
         const uniqueRaw: Order[] = []
@@ -387,6 +262,129 @@ export default function PedidosPage() {
         })
         return ['todos', ...Array.from(tipoSet)]
     }, [todosPermitidos])
+
+    // Pedidos filtrados por todos os critérios EXCETO a etapa
+    const baseFilteredOrders = useMemo(() => {
+        if (todosPermitidos.length === 0) return []
+
+        let filtered = todosPermitidos
+
+        if (centroCusto !== 'todos') {
+            filtered = filtered.filter((pedido: Order) =>
+                getPedidoCentrosCusto(pedido).includes(centroCusto)
+            )
+        }
+
+        if (search) {
+            const searchLower = search.toLowerCase()
+            filtered = filtered.filter((order: Order) => {
+                const titulo = order.titulo ? String(order.titulo).toLowerCase() : ''
+                const idRequisicao = (order.id_requisicao || (order as any).idRequisicao) ? String(order.id_requisicao || (order as any).idRequisicao).toLowerCase() : ''
+                const idPedido = (order.id_pedido || (order as any).idPedido) ? String(order.id_pedido || (order as any).idPedido).toLowerCase() : ''
+                const fornecedor = order.fornecedor_nome ? String(order.fornecedor_nome).toLowerCase() : ''
+
+                return titulo.includes(searchLower) ||
+                    idRequisicao.includes(searchLower) ||
+                    idPedido.includes(searchLower) ||
+                    fornecedor.includes(searchLower)
+            })
+        }
+
+        if (status !== 'todos') {
+            filtered = filtered.filter((order: Order) => order.status_pedido === status)
+        }
+
+        if (tipo !== 'todos') {
+            filtered = filtered.filter((order: Order) => order.tipo_pedido === tipo)
+        }
+
+        if (startDate) {
+            filtered = filtered.filter((order: Order) => {
+                const rawDate = order.data_pedido || order.dataEntregaEstimada
+                if (!rawDate) return false
+                const dateStr = String(rawDate).split('T')[0].split(' ')[0]
+                return dateStr >= startDate
+            })
+        }
+
+        if (endDate) {
+            filtered = filtered.filter((order: Order) => {
+                const rawDate = order.data_pedido || order.dataEntregaEstimada
+                if (!rawDate) return false
+                const dateStr = String(rawDate).split('T')[0].split(' ')[0]
+                return dateStr <= endDate
+            })
+        }
+
+        return filtered
+    }, [todosPermitidos, centroCusto, search, status, tipo, startDate, endDate, getPedidoCentrosCusto])
+
+    // Estatísticas de etapas (baseadas em baseFilteredOrders para não zerar quando uma etapa for selecionada)
+    const etapasEstatisticas = useMemo(() => {
+        if (allOrdersRaw.length === 0) return []
+        const etapasVisiveis = ETAPAS.filter(e => !e.oculta)
+        const estatisticas: EtapaEstatistica[] = etapasVisiveis.map(etapaItem => ({
+            nome: etapaItem.nome,
+            descricao: etapaItem.descricao,
+            quantidade: 0,
+            ordem: etapaItem.ordem
+        }))
+        baseFilteredOrders.forEach((order: Order) => {
+            const etapaAtual = identificarEtapaAtual(order)
+            if (etapaAtual) {
+                const etapaInfo = estatisticas.find(e => e.nome === etapaAtual)
+                if (etapaInfo) etapaInfo.quantidade++
+            }
+        })
+        return estatisticas
+    }, [baseFilteredOrders, allOrdersRaw.length])
+
+    useEffect(() => {
+        if (allOrdersRaw.length === 0) {
+            setFilteredOrders([])
+            setTotalItems(0)
+            setTotalPages(1)
+            return
+        }
+
+        let filtered = baseFilteredOrders
+
+        if (etapa !== 'Todas') {
+            filtered = filtered.filter((order: Order) => {
+                const etapaAtual = identificarEtapaAtual(order)
+                return etapaAtual === etapa
+            })
+        }
+
+        // Ordenar os pedidos filtrados por ID (do menor para o maior)
+        const sorted = [...filtered].sort((a, b) => {
+            const idA = a.id_requisicao || a.id_pedido || a.id
+            const idB = b.id_requisicao || b.id_pedido || b.id
+
+            const numA = parseInt(String(idA || '0').replace(/\D/g, '')) || 0
+            const numB = parseInt(String(idB || '0').replace(/\D/g, '')) || 0
+
+            if (numA !== numB) {
+                return numA - numB
+            }
+
+            return String(idA || '').localeCompare(String(idB || ''), undefined, { numeric: true })
+        })
+
+        setFilteredOrders(sorted)
+        setTotalItems(sorted.length)
+        setTotalPages(Math.ceil(sorted.length / PAGE_SIZE))
+        setPage(1)
+    }, [baseFilteredOrders, etapa, allOrdersRaw.length])
+
+    useEffect(() => {
+        console.log('📊 [PedidosPage] Estado atual:', {
+            dataLength: allOrdersRaw.length,
+            loading,
+            loadError,
+            hasData: allOrdersRaw.length > 0
+        })
+    }, [allOrdersRaw, loading, loadError])
 
     const paginatedOrders = filteredOrders.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
@@ -626,29 +624,6 @@ export default function PedidosPage() {
                         ))}
                     </SelectContent>
                 </Select>
-
-                <Select value={etapa} onValueChange={setEtapa}>
-                    <SelectTrigger className="w-40">
-                        <SelectValue placeholder="Etapa" />
-                    </SelectTrigger>
-                    <SelectContent>
-                        <SelectItem value="Todas">Todas as Etapas</SelectItem>
-                        {etapasEstatisticas
-                            .sort((a, b) => a.ordem - b.ordem)
-                            .map((e) => (
-                                <SelectItem key={e.nome} value={e.nome}>
-                                    <div className="flex items-center gap-2">
-                                        {e.nome === 'CANCELADO' ? (
-                                            <XCircle className="w-3 h-3 text-destructive" />
-                                        ) : (
-                                            <Flag className="w-3 h-3" />
-                                        )}
-                                        <span>{e.nome} ({e.quantidade})</span>
-                                    </div>
-                                </SelectItem>
-                            ))}
-                    </SelectContent>
-                </Select>
             </div>
 
             {/* Cards de Estatísticas de Etapas */}
@@ -663,8 +638,8 @@ export default function PedidosPage() {
                                     key={etapaItem.nome}
                                     whileHover={{ scale: 1.02 }}
                                     whileTap={{ scale: 0.98 }}
-                                    onClick={() => setEtapa(etapaItem.nome)}
-                                    className={`rounded-lg border p-3 text-left transition-all ${etapa === etapaItem.nome
+                                    onClick={() => setEtapa(current => current === etapaItem.nome ? 'Todas' : etapaItem.nome)}
+                                    className={`rounded-lg border p-3 text-left transition-all cursor-pointer ${etapa === etapaItem.nome
                                         ? getEtapaColor(etapaItem.nome) + ' border-2'
                                         : 'bg-card border-border hover:border-primary/50'
                                         }`}
@@ -764,6 +739,7 @@ export default function PedidosPage() {
                                     <>
                                         <th className="text-left p-3 text-muted-foreground font-medium w-[130px]">Req / Pedido</th>
                                         <th className="text-left p-3 text-muted-foreground font-medium min-w-[250px]">Título</th>
+                                        <th className="text-left p-3 text-muted-foreground font-medium w-[150px]">Centro de Custo</th>
                                         <th className="text-left p-3 text-muted-foreground font-medium hidden md:table-cell min-w-[200px]">Fornecedor</th>
                                         <th className="text-left p-3 text-muted-foreground font-medium hidden lg:table-cell w-[110px]">Data Pedido</th>
                                         <th className="text-left p-3 text-muted-foreground font-medium hidden lg:table-cell w-[130px] whitespace-nowrap">{getEtapaHeaderLabel(etapa)}</th>
@@ -838,7 +814,7 @@ export default function PedidosPage() {
                                             <td className="p-3 text-muted-foreground align-top whitespace-nowrap">
                                                 {order.data_pedido ? new Date(order.data_pedido).toLocaleDateString("pt-BR") : '---'}
                                             </td>
-                                            <td className="p-3 text-muted-foreground align-top whitespace-nowrap text-xs">
+                                            <td className="p-3 hidden lg:table-cell text-muted-foreground align-top whitespace-nowrap">
                                                 {(() => {
                                                     const etapaDateInfo = getEtapaDateInfo(order, etapaAtual)
                                                     const formattedDate = etapaDateInfo?.date
@@ -925,6 +901,16 @@ export default function PedidosPage() {
                                             <td className="p-3 text-card-foreground font-medium align-top">
                                                 <div className="whitespace-normal break-words max-w-[300px]">
                                                     {order.titulo}
+                                                </div>
+                                            </td>
+                                            <td className="p-3 text-card-foreground align-top">
+                                                <div className="flex flex-col">
+                                                    <span className="font-mono text-xs whitespace-normal break-words">
+                                                        {pedidoInfo.centroCusto}
+                                                    </span>
+                                                    <span className="text-xs text-muted-foreground mt-1">
+                                                        {getCostCenterName(pedidoInfo.centroCusto)}
+                                                    </span>
                                                 </div>
                                             </td>
                                             <td className="p-3 hidden md:table-cell text-card-foreground align-top">

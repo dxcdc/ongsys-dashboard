@@ -97,6 +97,10 @@ export function adaptPedido(p: any): Order {
 export function adaptRequisicao(req: any): Order {
     if (!req) return {} as Order
 
+    const reqId = req.id_requisicao !== undefined && req.id_requisicao !== null && req.id_requisicao !== ''
+        ? String(req.id_requisicao)
+        : (req.idRequisicao !== undefined && req.idRequisicao !== null ? String(req.idRequisicao) : '')
+
     const hasCancelamento = req.cancelamento !== null && req.cancelamento !== undefined
     const reqStatusUpper = String(req.status || '').toUpperCase()
     const isStatusCancelado = reqStatusUpper.includes('CANCEL') || reqStatusUpper.includes('NEGAD') || reqStatusUpper.includes('REJEIT')
@@ -105,25 +109,33 @@ export function adaptRequisicao(req: any): Order {
     const etapaStr = isCancelado ? 'CANCELADO' : `ETAPA 0${req.etapa || 1}`
     const statusStr = isCancelado ? (req.status || 'Cancelado') : (req.status || `Etapa 0${req.etapa || 1}`)
 
-    const rawItens = req.itens || []
+    const rawItens = req.itens || req.itensPedido || req.itens_pedido || []
     const itensPedido = Array.isArray(rawItens)
         ? rawItens.map((it: any) => ({
-            idProduto: it.idProduto,
-            idServico: it.idServico,
-            nomeProduto: it.nome,
-            nomeServico: it.nome,
+            idProduto: it.id_produto ?? it.idProduto,
+            idServico: it.id_servico ?? it.idServico,
+            nomeProduto: it.nome_produto || it.nome || it.descricao || '',
+            nomeServico: it.nome_servico || it.nome || it.descricao || '',
             quantidade: parseFloat(it.quantidade) || 0,
-            valorUnitario: it.valorUnitario !== null && it.valorUnitario !== undefined ? parseFloat(it.valorUnitario) : null,
-            valorTotal: it.valorTotal !== null && it.valorTotal !== undefined ? parseFloat(it.valorTotal) : null,
-            centroCusto: req.centroCustoProjeto || req.subprojeto || '',
+            valorUnitario: it.valor_unitario !== null && it.valor_unitario !== undefined
+                ? parseFloat(it.valor_unitario)
+                : (it.valorUnitario !== null && it.valorUnitario !== undefined ? parseFloat(it.valorUnitario) : null),
+            valorTotal: it.valor_total !== null && it.valor_total !== undefined
+                ? parseFloat(it.valor_total)
+                : (it.valorTotal !== null && it.valorTotal !== undefined ? parseFloat(it.valorTotal) : null),
+            centroCusto: it.centro_custo || it.centroCusto || req.centro_custo_projeto || req.centroCustoProjeto || req.subprojeto || '',
             grupo: it.grupo || 'Geral',
             controleEntregas: []
         }))
         : []
 
     let valorTotal = 0
-    if (typeof req.valorGlobal === 'number') {
+    if (typeof req.valor_global === 'number') {
+        valorTotal = req.valor_global
+    } else if (typeof req.valorGlobal === 'number') {
         valorTotal = req.valorGlobal
+    } else if (req.valor_global) {
+        valorTotal = parseFloat(req.valor_global) || 0
     } else if (req.valorGlobal) {
         valorTotal = parseFloat(req.valorGlobal) || 0
     } else if (itensPedido.length > 0) {
@@ -134,35 +146,42 @@ export function adaptRequisicao(req: any): Order {
         }, 0)
     }
 
+    const solicitante = req.solicitante || req.requisitante || ''
+    const responsavelCotacao = req.responsavel_cotacao || req.responsavelCotacao || ''
+    const dataPedido = req.data_requisicao || req.dataRequisicao || ''
+    const dataEntregaEstimada = req.data_prevista_entrega || req.dataPrevistaEntrega || ''
+    const tipoRequisicao = req.tipo_requisicao || req.tipoRequisicao || 'produto'
+    const subprojeto = req.subprojeto || req.centro_custo_projeto || req.centroCustoProjeto || req.centro_custo || ''
+
     return {
-        id: `r_${req.idRequisicao}`,
-        id_requisicao: String(req.idRequisicao || ''),
+        id: `r_${reqId}`,
+        id_requisicao: reqId,
         id_pedido: '',
         titulo: req.titulo || '',
         status_pedido: statusStr,
         etapa: etapaStr,
         fornecedor_nome: isCancelado ? 'Cancelado antes do pedido' : 'Em cotação / aprovação',
         fornecedor_documento: '',
-        requisitante: req.solicitante || '',
-        solicitante: req.solicitante || '',
-        comprador: req.responsavelCotacao || '',
-        responsavel_cotacao: req.responsavelCotacao || '',
-        data_pedido: req.dataRequisicao || '',
-        dataEntregaEstimada: req.dataPrevistaEntrega || '',
-        tipo_pedido: req.tipoRequisicao || 'produto',
-        tipo_requisicao: req.tipoRequisicao || 'produto',
-        subprojeto: req.subprojeto || req.centroCustoProjeto || '',
-        local_entrega: req.localEntrega,
+        requisitante: solicitante,
+        solicitante: solicitante,
+        comprador: responsavelCotacao,
+        responsavel_cotacao: responsavelCotacao,
+        data_pedido: dataPedido,
+        dataEntregaEstimada,
+        tipo_pedido: tipoRequisicao,
+        tipo_requisicao: tipoRequisicao,
+        subprojeto,
+        local_entrega: req.local_entrega || req.localEntrega,
         itens_pedido: itensPedido,
         logs: Array.isArray(req.logs) ? req.logs : [],
-        descricao_pedido: req.descricaoRequisicao || '',
-        justificativa_compra: req.justificativaCompra || '',
-        fonte_pagadora: req.fontePagadora || '',
-        conta_plano_financeiro: req.contaPlanoFinanceiro || '',
+        descricao_pedido: req.descricao_requisicao || req.descricaoRequisicao || '',
+        justificativa_compra: req.justificativa_compra || req.justificativaCompra || '',
+        fonte_pagadora: req.fonte_pagadora || req.fontePagadora || '',
+        conta_plano_financeiro: req.conta_plano_financeiro || req.contaPlanoFinanceiro || '',
         valor_total: valorTotal,
         cancelamento: req.cancelamento || (isCancelado ? { usuario: 'Sistema', justificativa: req.status || 'Ordem Negada' } : null),
         aprovacoes: Array.isArray(req.aprovacoes) ? req.aprovacoes : [],
-        aprovacoesCotacao: Array.isArray(req.aprovacoesCotacao) ? req.aprovacoesCotacao : []
+        aprovacoesCotacao: Array.isArray(req.aprovacoes_cotacao || req.aprovacoesCotacao) ? (req.aprovacoes_cotacao || req.aprovacoesCotacao) : []
     }
 }
 
@@ -188,14 +207,14 @@ export function enrichPedidoWithRequisicao(pedido: Order, req: any): Order {
         }
     }
 
-    cloned.solicitante = req.solicitante || cloned.requisitante
-    cloned.requisitante = cloned.requisitante || req.solicitante
-    cloned.responsavel_cotacao = req.responsavelCotacao || cloned.comprador
-    cloned.comprador = cloned.comprador || req.responsavelCotacao
+    cloned.solicitante = req.solicitante || req.requisitante || cloned.requisitante
+    cloned.requisitante = cloned.requisitante || req.solicitante || req.requisitante
+    cloned.responsavel_cotacao = req.responsavel_cotacao || req.responsavelCotacao || cloned.comprador
+    cloned.comprador = cloned.comprador || req.responsavel_cotacao || req.responsavelCotacao
     cloned.aprovacoes = req.aprovacoes || cloned.aprovacoes || []
-    cloned.aprovacoesCotacao = req.aprovacoesCotacao || cloned.aprovacoesCotacao || []
-    cloned.subprojeto = cloned.subprojeto || req.subprojeto || req.centroCustoProjeto
-    cloned.tipo_requisicao = req.tipoRequisicao || cloned.tipo_pedido
+    cloned.aprovacoesCotacao = req.aprovacoes_cotacao || req.aprovacoesCotacao || cloned.aprovacoesCotacao || []
+    cloned.subprojeto = cloned.subprojeto || req.subprojeto || req.centro_custo_projeto || req.centroCustoProjeto
+    cloned.tipo_requisicao = req.tipo_requisicao || req.tipoRequisicao || cloned.tipo_pedido
 
     if ((!cloned.logs || cloned.logs.length === 0) && req.logs && req.logs.length > 0) {
         cloned.logs = req.logs
