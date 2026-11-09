@@ -258,14 +258,12 @@ export default function DashboardPage() {
                     <StatCard
                         title="Total de Requisições de Produtos"
                         value={formatNumber(data.totalProductOrders)}
-                        subtitle="Quantidade de pedidos de produto"
                         icon={Package}
                         variant="info"
                     />
                     <StatCard
                         title="Total de Requisições de Serviço"
                         value={formatNumber(data.totalServiceOrders)}
-                        subtitle="Quantidade de pedidos de serviço"
                         icon={Briefcase}
                         variant="info"
                     />
@@ -276,28 +274,24 @@ export default function DashboardPage() {
                     <StatCard
                         title="Total de Requisições de Produtos"
                         value={formatNumber(data.totalProductOrders)}
-                        subtitle="Quantidade de pedidos de produto"
                         icon={Package}
                         variant="info"
                     />
                     <StatCard
                         title="Valor Total dos Produtos"
                         value={formatCurrency(data.totalProductOrdersValue)}
-                        subtitle="Soma dos valores de pedidos de produto"
                         icon={DollarSign}
                         variant="success"
                     />
                     <StatCard
                         title="Total de Requisições de Serviço"
                         value={formatNumber(data.totalServiceOrders)}
-                        subtitle="Quantidade de pedidos de serviço"
                         icon={Briefcase}
                         variant="info"
                     />
                     <StatCard
                         title="Valor Total de Serviços"
                         value={formatCurrency(data.totalServiceOrdersValue)}
-                        subtitle="Soma dos valores de pedidos de serviço"
                         icon={DollarSign}
                         variant="success"
                     />
