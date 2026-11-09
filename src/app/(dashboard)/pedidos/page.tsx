@@ -1176,7 +1176,7 @@ export default function PedidosPage() {
                                                                     </Badge>
                                                                 </div>
                                                                 {dataAprov && (
-                                                                    <span className="text-muted-foreground">Data: {new Date(dataAprov.includes(' ') ? dataAprov.replace(' ', 'T') : dataAprov).toLocaleString('pt-BR')}</span>
+                                                                    <span className="text-muted-foreground">Data: {new Date(dataAprov.includes(' ') ? dataAprov.replace(' ', 'T') : dataAprov).toLocaleDateString('pt-BR')}</span>
                                                                 )}
                                                                 {obs && (
                                                                     <p className="text-muted-foreground mt-1">Obs: {obs}</p>
@@ -1206,7 +1206,7 @@ export default function PedidosPage() {
                                                                     </Badge>
                                                                 </div>
                                                                 {dataAprov && (
-                                                                    <span className="text-muted-foreground">Data: {new Date(dataAprov.includes(' ') ? dataAprov.replace(' ', 'T') : dataAprov).toLocaleString('pt-BR')}</span>
+                                                                    <span className="text-muted-foreground">Data: {new Date(dataAprov.includes(' ') ? dataAprov.replace(' ', 'T') : dataAprov).toLocaleDateString('pt-BR')}</span>
                                                                 )}
                                                                 {obs && (
                                                                     <p className="text-muted-foreground mt-1">Obs: {obs}</p>

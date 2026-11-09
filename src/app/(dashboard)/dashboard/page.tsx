@@ -13,7 +13,8 @@ import {
     AlertCircle,
     Clock,
     ChartArea,
-    RotateCcw
+    RotateCcw,
+    ChevronRight
 } from "lucide-react"
 import { StatCard } from "@/src/components/StatCard"
 import { Button } from "@/src/components/ui/button"
@@ -22,6 +23,8 @@ import { useAuth } from '@/src/hooks/useAuth'
 import { LoadingScreen } from '@/src/components/ui/LoadingScreen'
 import { usePedidosData } from "@/src/contexts/PedidosContext"
 import { calculateDashboardSummary } from "@/src/lib/dashboard-calc"
+import { TopSupplier } from "@/src/lib/dashboard-types"
+import { SupplierOrdersMasterDetailModal } from "@/src/components/SupplierOrdersMasterDetailModal"
 
 const formatCurrency = (v: number) =>
     new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v)
@@ -50,6 +53,7 @@ export default function DashboardPage() {
     const [endDate, setEndDate] = useState('')
     const [selectedCostCenter, setSelectedCostCenter] = useState('todos')
     const [showDateFilter, setShowDateFilter] = useState(false)
+    const [selectedSupplier, setSelectedSupplier] = useState<TopSupplier | null>(null)
 
     // Cálculo em memória e reativo do resumo do Dashboard
     const data = useMemo(() => {
@@ -277,7 +281,7 @@ export default function DashboardPage() {
                         variant="info"
                     />
                     <StatCard
-                        title="Valor Total dos Produtos por Pedido"
+                        title="Valor Total dos Produtos"
                         value={formatCurrency(data.totalProductOrdersValue)}
                         subtitle="Soma dos valores de pedidos de produto"
                         icon={DollarSign}
@@ -291,7 +295,7 @@ export default function DashboardPage() {
                         variant="info"
                     />
                     <StatCard
-                        title="Valor Total de Serviços por Pedido"
+                        title="Valor Total de Serviços"
                         value={formatCurrency(data.totalServiceOrdersValue)}
                         subtitle="Soma dos valores de pedidos de serviço"
                         icon={DollarSign}
@@ -309,25 +313,36 @@ export default function DashboardPage() {
                     className="bg-card rounded-xl border p-5 h-fit"
                 >
                     <div className="flex items-center justify-between mb-4">
-                        <h3 className="font-semibold text-card-foreground">Top 10 Fornecedores</h3>
+                        <div>
+                            <h3 className="font-semibold text-card-foreground">Top 10 Fornecedores</h3>
+                            <p className="text-xs text-muted-foreground">Clique para ver pedidos e detalhes</p>
+                        </div>
                         <Building2 className="w-5 h-5 text-muted-foreground" />
                     </div>
                     <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2">
                         {data.topSuppliers.length > 0 ? (
                             data.topSuppliers.map((supplier, index) => (
-                                <div key={supplier.document} className="flex items-center justify-between p-2 hover:bg-muted/30 rounded-lg">
+                                <div
+                                    key={supplier.document}
+                                    onClick={() => setSelectedSupplier(supplier)}
+                                    className="flex items-center justify-between p-2.5 hover:bg-muted/60 rounded-lg cursor-pointer transition-all group border border-transparent hover:border-primary/20 hover:shadow-sm"
+                                    title={`Ver pedidos de ${supplier.name}`}
+                                >
                                     <div className="flex items-center gap-3">
-                                        <span className="w-6 h-6 rounded-full bg-muted flex items-center justify-center text-xs font-bold">
+                                        <span className="w-6 h-6 rounded-full bg-muted flex items-center justify-center text-xs font-bold group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
                                             {index + 1}
                                         </span>
                                         <div>
-                                            <p className="text-sm font-medium">{supplier.name}</p>
+                                            <p className="text-sm font-medium group-hover:text-primary transition-colors">{supplier.name}</p>
                                             <p className="text-xs text-muted-foreground">{supplier.orderCount} pedidos</p>
                                         </div>
                                     </div>
-                                    {!isSepod && (
-                                        <p className="text-sm font-bold text-primary">{formatCurrency(supplier.totalValue)}</p>
-                                    )}
+                                    <div className="flex items-center gap-2">
+                                        {!isSepod && (
+                                            <p className="text-sm font-bold text-primary">{formatCurrency(supplier.totalValue)}</p>
+                                        )}
+                                        <ChevronRight className="w-4 h-4 text-muted-foreground/40 group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
+                                    </div>
                                 </div>
                             ))
                         ) : (
@@ -358,11 +373,11 @@ export default function DashboardPage() {
                                         </span>
                                         <div>
                                             <p className="text-sm font-medium">{item.name}</p>
-                                            <p className="text-xs text-muted-foreground">{item.group} • {item.orderCount}x</p>
+                                            <p className="text-xs text-muted-foreground">{item.group}</p>
                                         </div>
                                     </div>
                                     {!isSepod && (
-                                        <p className="text-sm font-bold text-primary">{formatCurrency(item.totalValue)}</p>
+                                        <p className="text-sm font-bold text-primary">{item.orderCount}x</p>
                                     )}
                                 </div>
                             ))
@@ -410,6 +425,20 @@ export default function DashboardPage() {
                     </div>
                 </div>
             </motion.div>
+
+            {/* Modal Master-Detail dos Pedidos do Fornecedor */}
+            <SupplierOrdersMasterDetailModal
+                isOpen={!!selectedSupplier}
+                onClose={() => setSelectedSupplier(null)}
+                supplier={selectedSupplier}
+                allOrders={pedidos || []}
+                currentFilters={{
+                    startDate: startDate || undefined,
+                    endDate: endDate || undefined,
+                    costCenter: selectedCostCenter
+                }}
+                isSepod={isSepod}
+            />
         </div>
     )
 }
