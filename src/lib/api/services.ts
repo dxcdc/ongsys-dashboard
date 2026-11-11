@@ -243,16 +243,22 @@ export const pedidosService = {
                         const reqStatusCancelado = reqStatusUpper.includes('CANCEL') || reqStatusUpper.includes('NEGAD') || reqStatusUpper.includes('REJEIT')
                         const isReqCancelado = hasCancelamento || reqStatusCancelado || req.etapa === null
 
+                        const reqStatus = req.status || (isReqCancelado ? 'Cancelado' : (req.etapa ? `Etapa 0${req.etapa}` : ''))
+                        cloned.statusRequisicao = reqStatus
+                        cloned.status_requisicao = reqStatus
+
                         if (isReqCancelado) {
                             cloned.cancelamento = req.cancelamento || { usuario: 'Sistema', justificativa: req.status || 'Ordem Negada' }
                             cloned.etapa = 'CANCELADO'
-                            cloned.statusPedido = 'Cancelado'
-                            cloned.status_pedido = 'Cancelado'
+                            cloned.statusPedido = cloned.statusPedido || cloned.status_pedido || 'Cancelado'
+                            cloned.status_pedido = cloned.statusPedido
                         } else {
                             cloned.cancelamento = null
                             if (req.etapa) {
                                 cloned.etapa = `ETAPA 0${req.etapa}`
                             }
+                            cloned.statusPedido = cloned.statusPedido || cloned.status_pedido || ''
+                            cloned.status_pedido = cloned.statusPedido
                         }
 
                         // Enriquecer com dados de requisição
@@ -309,8 +315,10 @@ export const pedidosService = {
                         idPedido: '',
                         id_pedido: '',
                         titulo: req.titulo || '',
-                        statusPedido: statusStr,
-                        status_pedido: statusStr,
+                        statusPedido: req.statusPedido || req.status_pedido || '',
+                        status_pedido: req.statusPedido || req.status_pedido || '',
+                        statusRequisicao: req.status || statusStr,
+                        status_requisicao: req.status || statusStr,
                         etapa: etapaStr,
                         fornecedor: {
                             id: '',

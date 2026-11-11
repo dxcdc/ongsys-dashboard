@@ -64,14 +64,27 @@ import { LoadingScreen } from "@/src/components/ui/LoadingScreen"
 const PAGE_SIZE = 20
 
 const getStatusColor = (status: string): string => {
+    if (!status) return 'border-muted-foreground/30 text-muted-foreground'
     const colors: Record<string, string> = {
         'Ordem finalizada': 'border-success/30 text-success',
         'Aguardando aprovação': 'border-warning/30 text-warning',
         'Em andamento': 'border-blue-500/30 text-blue-500',
         'Cancelado': 'border-destructive/30 text-destructive',
-        'Rascunho': 'border-muted-foreground/30 text-muted-foreground'
+        'Cancelada': 'border-destructive/30 text-destructive',
+        'Rascunho': 'border-muted-foreground/30 text-muted-foreground',
+        'Ordem gerada': 'border-blue-500/30 text-blue-500',
+        'Aprovada': 'border-success/30 text-success',
+        'Aprovado': 'border-success/30 text-success',
+        'Em cotação': 'border-amber-500/30 text-amber-500',
+        'Em aprovação': 'border-amber-500/30 text-amber-500'
     }
-    return colors[status] || 'border-muted-foreground/30 text-muted-foreground'
+    if (colors[status]) return colors[status]
+    const s = status.toLowerCase()
+    if (s.includes('cancel') || s.includes('negad') || s.includes('rejeit')) return 'border-destructive/30 text-destructive'
+    if (s.includes('finaliz') || s.includes('aprov') || s.includes('conclu') || s.includes('entregue')) return 'border-success/30 text-success'
+    if (s.includes('aguard') || s.includes('pendent') || s.includes('cota')) return 'border-warning/30 text-warning'
+    if (s.includes('andamento') || s.includes('gerad') || s.includes('fatur') || s.includes('transit')) return 'border-blue-500/30 text-blue-500'
+    return 'border-muted-foreground/30 text-muted-foreground'
 }
 
 const getEtapaColor = (etapa: string): string => {
@@ -85,6 +98,15 @@ const getEtapaColor = (etapa: string): string => {
         'CANCELADO': 'border-red-500 text-red-600 bg-red-50 dark:bg-red-950/30'
     }
     return colors[etapa] || 'border-gray-500 text-gray-600 bg-gray-50 dark:bg-gray-950/30'
+}
+
+const isEtapa5OuMais = (etapa?: string | null, order?: Order): boolean => {
+    const etapaStr = etapa ? String(etapa) : (order?.etapa !== undefined && order?.etapa !== null ? String(order.etapa) : '')
+    const match = etapaStr.match(/\d+/)
+    if (match) {
+        return parseInt(match[0], 10) >= 5
+    }
+    return false
 }
 
 // Função para extrair informações do pedido
@@ -109,7 +131,8 @@ export default function PedidosPage() {
     const { data: allOrdersRaw, loading, isSyncing, syncProgress, loadError, reload } = usePedidosData()
     const [filteredOrders, setFilteredOrders] = useState<Order[]>([])
     const [search, setSearch] = useState("")
-    const [status, setStatus] = useState("todos")
+    const [statusRequisicao, setStatusRequisicao] = useState("todos")
+    const [statusPedido, setStatusPedido] = useState("todos")
     const [tipo, setTipo] = useState("todos")
     const [etapa, setEtapa] = useState("Todas")
     const [centroCusto, setCentroCusto] = useState("todos")
@@ -230,14 +253,33 @@ export default function PedidosPage() {
     }, [userRole, userCentrosCusto, atitudeDefaultCodes, allOrdersRaw, getPedidoCentrosCusto])
 
     const todosPermitidos = useMemo(() => {
+        // Mapear todas as requisições que já possuem pedidos reais
+        const reqsWithRealOrders = new Set<string>()
+        allOrdersRaw.forEach(order => {
+            const pedId = order.id_pedido || (order as any).idPedido
+            const reqId = order.id_requisicao || (order as any).idRequisicao
+            if (pedId && String(pedId).trim() !== '' && reqId) {
+                reqsWithRealOrders.add(String(reqId).trim())
+            }
+        })
+
         const seen = new Set<string>()
         const uniqueRaw: Order[] = []
         allOrdersRaw.forEach(order => {
             const reqId = order.id_requisicao || (order as any).idRequisicao
             const pedId = order.id_pedido || (order as any).idPedido
-            const key = pedId
+            const normReqId = reqId ? String(reqId).trim() : ''
+            const hasPed = pedId && String(pedId).trim() !== ''
+
+            // Se for requisição sem pedido, mas a requisição já tem pedido emitido, descartar a linha órfã
+            if (!hasPed && normReqId && reqsWithRealOrders.has(normReqId)) {
+                return
+            }
+
+            const key = hasPed
                 ? `p_${pedId}`
-                : (reqId ? `r_${reqId}` : `id_${order.id}`)
+                : (normReqId ? `r_${normReqId}` : `id_${order.id}`)
+
             if (!seen.has(key)) {
                 seen.add(key)
                 uniqueRaw.push(order)
@@ -246,13 +288,21 @@ export default function PedidosPage() {
         return aplicarFiltroCentroCusto(uniqueRaw)
     }, [allOrdersRaw, aplicarFiltroCentroCusto])
 
-    // Status e tipos únicos
-    const uniqueStatus = useMemo(() => {
+    // Status únicos de requisições e de pedidos
+    const uniqueStatusRequisicao = useMemo(() => {
+        const statusSet = new Set<string>()
+        todosPermitidos.forEach((order: Order) => {
+            if (order.status_requisicao) statusSet.add(order.status_requisicao)
+        })
+        return ['todos', ...Array.from(statusSet).sort((a, b) => a.localeCompare(b))]
+    }, [todosPermitidos])
+
+    const uniqueStatusPedido = useMemo(() => {
         const statusSet = new Set<string>()
         todosPermitidos.forEach((order: Order) => {
             if (order.status_pedido) statusSet.add(order.status_pedido)
         })
-        return ['todos', ...Array.from(statusSet)]
+        return ['todos', ...Array.from(statusSet).sort((a, b) => a.localeCompare(b))]
     }, [todosPermitidos])
 
     const uniqueTipos = useMemo(() => {
@@ -290,8 +340,12 @@ export default function PedidosPage() {
             })
         }
 
-        if (status !== 'todos') {
-            filtered = filtered.filter((order: Order) => order.status_pedido === status)
+        if (statusRequisicao !== 'todos') {
+            filtered = filtered.filter((order: Order) => order.status_requisicao === statusRequisicao)
+        }
+
+        if (statusPedido !== 'todos') {
+            filtered = filtered.filter((order: Order) => order.status_pedido === statusPedido)
         }
 
         if (tipo !== 'todos') {
@@ -317,7 +371,7 @@ export default function PedidosPage() {
         }
 
         return filtered
-    }, [todosPermitidos, centroCusto, search, status, tipo, startDate, endDate, getPedidoCentrosCusto])
+    }, [todosPermitidos, centroCusto, search, statusRequisicao, statusPedido, tipo, startDate, endDate, getPedidoCentrosCusto])
 
     // Estatísticas de etapas (baseadas em baseFilteredOrders para não zerar quando uma etapa for selecionada)
     const etapasEstatisticas = useMemo(() => {
@@ -599,14 +653,27 @@ export default function PedidosPage() {
                     </SelectContent>
                 </Select>
 
-                <Select value={status} onValueChange={setStatus}>
-                    <SelectTrigger className="w-40">
-                        <SelectValue placeholder="Status" />
+                <Select value={statusRequisicao} onValueChange={setStatusRequisicao}>
+                    <SelectTrigger className="w-44">
+                        <SelectValue placeholder="Status Req." />
                     </SelectTrigger>
                     <SelectContent>
-                        {uniqueStatus.map((s) => (
+                        {uniqueStatusRequisicao.map((s) => (
                             <SelectItem key={s} value={s}>
-                                {s === 'todos' ? 'Todos os status' : s}
+                                {s === 'todos' ? 'Todos os status (Req)' : s}
+                            </SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+
+                <Select value={statusPedido} onValueChange={setStatusPedido}>
+                    <SelectTrigger className="w-44">
+                        <SelectValue placeholder="Status Pedido" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        {uniqueStatusPedido.map((s) => (
+                            <SelectItem key={s} value={s}>
+                                {s === 'todos' ? 'Todos os status (Ped)' : s}
                             </SelectItem>
                         ))}
                     </SelectContent>
@@ -670,7 +737,7 @@ export default function PedidosPage() {
             )}
 
             {/* Indicadores de filtros ativos */}
-            {(search || status !== 'todos' || tipo !== 'todos' || etapa !== 'Todas' || centroCusto !== 'todos' || startDate || endDate) && (
+            {(search || statusRequisicao !== 'todos' || statusPedido !== 'todos' || tipo !== 'todos' || etapa !== 'Todas' || centroCusto !== 'todos' || startDate || endDate) && (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground flex-wrap">
                     <span>Filtros ativos:</span>
                     {(startDate || endDate) && (
@@ -691,10 +758,16 @@ export default function PedidosPage() {
                             <button onClick={() => setSearch('')} className="ml-1 hover:text-foreground">×</button>
                         </Badge>
                     )}
-                    {status !== 'todos' && (
+                    {statusRequisicao !== 'todos' && (
                         <Badge variant="secondary" className="gap-1">
-                            Status: {status}
-                            <button onClick={() => setStatus('todos')} className="ml-1 hover:text-foreground">×</button>
+                            Status Req: {statusRequisicao}
+                            <button onClick={() => setStatusRequisicao('todos')} className="ml-1 hover:text-foreground">×</button>
+                        </Badge>
+                    )}
+                    {statusPedido !== 'todos' && (
+                        <Badge variant="secondary" className="gap-1">
+                            Status Ped: {statusPedido}
+                            <button onClick={() => setStatusPedido('todos')} className="ml-1 hover:text-foreground">×</button>
                         </Badge>
                     )}
                     {tipo !== 'todos' && (
@@ -730,7 +803,7 @@ export default function PedidosPage() {
                                         <th className="text-left p-3 text-muted-foreground font-medium w-[110px]">Data Pedido</th>
                                         <th className="text-left p-3 text-muted-foreground font-medium w-[130px] whitespace-nowrap">{getEtapaHeaderLabel(etapa)}</th>
                                         <th className="text-left p-3 text-muted-foreground font-medium w-[110px]">Data Entrega</th>
-                                        <th className="text-center p-3 text-muted-foreground font-medium w-[120px]">Status</th>
+                                        <th className="text-center p-3 text-muted-foreground font-medium min-w-[130px]">Status</th>
                                         <th className="text-center p-3 text-muted-foreground font-medium w-[110px]">Etapa</th>
                                         <th className="text-center p-3 text-muted-foreground font-medium w-[80px]">Ações</th>
                                     </>
@@ -744,7 +817,7 @@ export default function PedidosPage() {
                                         <th className="text-left p-3 text-muted-foreground font-medium hidden lg:table-cell w-[110px]">Data Pedido</th>
                                         <th className="text-left p-3 text-muted-foreground font-medium hidden lg:table-cell w-[130px] whitespace-nowrap">{getEtapaHeaderLabel(etapa)}</th>
                                         <th className="text-right p-3 text-muted-foreground font-medium hidden xl:table-cell w-[120px]">Valor</th>
-                                        <th className="text-center p-3 text-muted-foreground font-medium w-[120px]">Status</th>
+                                        <th className="text-center p-3 text-muted-foreground font-medium min-w-[130px]">Status</th>
                                         <th className="text-center p-3 text-muted-foreground font-medium hidden lg:table-cell w-[110px]">Etapa Atual</th>
                                         <th className="text-center p-3 text-muted-foreground font-medium w-[80px]">Ações</th>
                                     </>
@@ -834,9 +907,38 @@ export default function PedidosPage() {
                                                 {order.dataEntregaEstimada ? new Date(order.dataEntregaEstimada).toLocaleDateString("pt-BR") : '---'}
                                             </td>
                                             <td className="p-3 text-center align-top">
-                                                <Badge variant="outline" className={getStatusColor(order.status_pedido || '')}>
-                                                    {order.status_pedido || '---'}
-                                                </Badge>
+                                                <div className="flex flex-col items-center gap-1">
+                                                    {!isEtapa5OuMais(etapaAtual, order) && (
+                                                        order.status_requisicao ? (
+                                                            <Badge
+                                                                variant="outline"
+                                                                className={`text-[11px] px-2 py-0.5 whitespace-nowrap ${getStatusColor(order.status_requisicao)}`}
+                                                                title="Status da Requisição (/requisicoes)"
+                                                            >
+                                                                <span className="text-[10px] text-muted-foreground mr-1 font-semibold">Req:</span>
+                                                                {order.status_requisicao}
+                                                            </Badge>
+                                                        ) : (
+                                                            <span className="text-[10px] text-muted-foreground/60 italic">Sem status req.</span>
+                                                        )
+                                                    )}
+                                                    {order.id_pedido || order.status_pedido ? (
+                                                        order.status_pedido ? (
+                                                            <Badge
+                                                                variant="outline"
+                                                                className={`text-[11px] px-2 py-0.5 whitespace-nowrap ${getStatusColor(order.status_pedido)}`}
+                                                                title="Status do Pedido (/pedidos)"
+                                                            >
+                                                                <span className="text-[10px] text-muted-foreground mr-1 font-semibold">Ped:</span>
+                                                                {order.status_pedido}
+                                                            </Badge>
+                                                        ) : (
+                                                            <span className="text-[10px] text-muted-foreground/60 italic">Sem status ped.</span>
+                                                        )
+                                                    ) : (
+                                                        <span className="text-[10px] text-muted-foreground/60 italic">Sem pedido</span>
+                                                    )}
+                                                </div>
                                             </td>
                                             <td className="p-3 text-center align-top">
                                                 <div className="flex flex-col items-center gap-1">
@@ -941,9 +1043,38 @@ export default function PedidosPage() {
                                                 {formatCurrency(order.valor_total || 0)}
                                             </td>
                                             <td className="p-3 text-center align-top">
-                                                <Badge variant="outline" className={getStatusColor(order.status_pedido || '')}>
-                                                    {order.status_pedido || '---'}
-                                                </Badge>
+                                                <div className="flex flex-col items-center gap-1">
+                                                    {!isEtapa5OuMais(etapaAtual, order) && (
+                                                        order.status_requisicao ? (
+                                                            <Badge
+                                                                variant="outline"
+                                                                className={`text-[11px] px-2 py-0.5 whitespace-nowrap ${getStatusColor(order.status_requisicao)}`}
+                                                                title="Status da Requisição (/requisicoes)"
+                                                            >
+                                                                <span className="text-[10px] text-muted-foreground mr-1 font-semibold">Req:</span>
+                                                                {order.status_requisicao}
+                                                            </Badge>
+                                                        ) : (
+                                                            <span className="text-[10px] text-muted-foreground/60 italic">Sem status req.</span>
+                                                        )
+                                                    )}
+                                                    {order.id_pedido || order.status_pedido ? (
+                                                        order.status_pedido ? (
+                                                            <Badge
+                                                                variant="outline"
+                                                                className={`text-[11px] px-2 py-0.5 whitespace-nowrap ${getStatusColor(order.status_pedido)}`}
+                                                                title="Status do Pedido (/pedidos)"
+                                                            >
+                                                                <span className="text-[10px] text-muted-foreground mr-1 font-semibold">Ped:</span>
+                                                                {order.status_pedido}
+                                                            </Badge>
+                                                        ) : (
+                                                            <span className="text-[10px] text-muted-foreground/60 italic">Sem status ped.</span>
+                                                        )
+                                                    ) : (
+                                                        <span className="text-[10px] text-muted-foreground/60 italic">Sem pedido</span>
+                                                    )}
+                                                </div>
                                             </td>
                                             <td className="p-3 text-center hidden lg:table-cell align-top">
                                                 <div className="flex flex-col items-center gap-1">
@@ -1092,7 +1223,31 @@ export default function PedidosPage() {
                                             )}
                                         </p>
                                     </div>
-                                    <div><p className="text-xs text-muted-foreground">Status</p><Badge variant="outline" className={getStatusColor(selectedOrder.status_pedido || '')}>{selectedOrder.status_pedido}</Badge></div>
+                                    <div>
+                                        <p className="text-xs text-muted-foreground mb-1">Status</p>
+                                        <div className="flex flex-col gap-1">
+                                            {selectedOrder.status_requisicao ? (
+                                                <div className="flex items-center gap-1.5">
+                                                    <span className="text-xs text-muted-foreground font-medium">Req:</span>
+                                                    <Badge variant="outline" className={getStatusColor(selectedOrder.status_requisicao)}>
+                                                        {selectedOrder.status_requisicao}
+                                                    </Badge>
+                                                </div>
+                                            ) : (
+                                                <span className="text-xs text-muted-foreground/60 italic">Sem status req.</span>
+                                            )}
+                                            {selectedOrder.status_pedido ? (
+                                                <div className="flex items-center gap-1.5">
+                                                    <span className="text-xs text-muted-foreground font-medium">Ped:</span>
+                                                    <Badge variant="outline" className={getStatusColor(selectedOrder.status_pedido)}>
+                                                        {selectedOrder.status_pedido}
+                                                    </Badge>
+                                                </div>
+                                            ) : (
+                                                <span className="text-xs text-muted-foreground/60 italic">Sem pedido gerado</span>
+                                            )}
+                                        </div>
+                                    </div>
                                 </div>
                                 <div><p className="text-xs text-muted-foreground">Título</p><p className="text-sm">{selectedOrder.titulo}</p></div>
                                 <div className="grid grid-cols-2 gap-4">

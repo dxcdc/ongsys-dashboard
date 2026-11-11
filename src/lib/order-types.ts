@@ -46,6 +46,8 @@ export interface Order {
     titulo?: string
     status_pedido?: string
     statusPedido?: string
+    status_requisicao?: string
+    statusRequisicao?: string
     etapa?: string
     fornecedor_id?: string
     fornecedor_nome?: string
@@ -193,7 +195,7 @@ export function identificarEtapaAtual(
     if (logsOrOrder && !Array.isArray(logsOrOrder)) {
         const o = logsOrOrder as any
         logs = o.logs || []
-        status = status || o.status_pedido || o.statusPedido || o.status
+        status = status || o.status_pedido || o.statusPedido || o.status_requisicao || o.statusRequisicao || o.status
         cancel = cancel ?? o.cancelamento
         etapaFixa = etapaFixa || o.etapa
     } else {

@@ -56,19 +56,25 @@ function buildConsolidatedList(
 
     // 1. Processar todos os pedidos existentes
     pedidosMap.forEach((pedido) => {
-        const reqId = pedido.id_requisicao ? String(pedido.id_requisicao) : null
-        if (reqId && requisicoesMap.has(reqId)) {
+        const hasPedido = !!(pedido.id_pedido && String(pedido.id_pedido).trim() !== '')
+        const reqId = pedido.id_requisicao ? String(pedido.id_requisicao).trim() : null
+
+        if (reqId) {
             matchedReqIds.add(reqId)
+        }
+
+        if (reqId && requisicoesMap.has(reqId)) {
             const req = requisicoesMap.get(reqId)
             result.push(enrichPedidoWithRequisicao(pedido, req))
-        } else {
+        } else if (hasPedido) {
             result.push(pedido)
         }
     })
 
     // 2. Incluir requisições sem pedido associado (Etapas 1-4 ou canceladas antes do pedido)
     requisicoesMap.forEach((req, reqId) => {
-        if (!matchedReqIds.has(reqId)) {
+        const normReqId = String(reqId).trim()
+        if (!matchedReqIds.has(normReqId)) {
             result.push(adaptRequisicao(req))
         }
     })
@@ -263,10 +269,24 @@ export function PedidosProvider({ children }: { children: ReactNode }) {
                 if (cached && Array.isArray(cached.data) && cached.data.length > 0) {
                     console.log(`⚡ [PedidosContext] Cache IndexedDB restaurado instantaneamente com ${cached.data.length} registros!`)
                     cached.data.forEach((order) => {
-                        const key = getOrderKey(order)
-                        pedidosMapRef.current.set(key, order)
-                        if (order.id_requisicao) {
-                            requisicoesMapRef.current.set(String(order.id_requisicao), order)
+                        const hasPedido = !!(order.id_pedido && String(order.id_pedido).trim() !== '')
+                        const normReqId = order.id_requisicao ? String(order.id_requisicao).trim() : ''
+
+                        if (!order.status_requisicao && !hasPedido && order.status_pedido) {
+                            order.status_requisicao = order.status_pedido
+                            order.statusRequisicao = order.status_pedido
+                            order.status_pedido = ''
+                            order.statusPedido = ''
+                        }
+
+                        // Apenas colocar em pedidosMapRef se for realmente um pedido com id_pedido
+                        if (hasPedido) {
+                            const key = getOrderKey(order)
+                            pedidosMapRef.current.set(key, order)
+                        }
+
+                        if (normReqId) {
+                            requisicoesMapRef.current.set(normReqId, order)
                         }
                     })
                     setPedidos(cached.data)

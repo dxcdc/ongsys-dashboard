@@ -64,6 +64,9 @@ export function adaptPedido(p: any): Order {
         id_pedido: idPedido,
         titulo: p.titulo || '',
         status_pedido: p.statusPedido || p.status_pedido || '',
+        statusPedido: p.statusPedido || p.status_pedido || '',
+        status_requisicao: p.statusRequisicao || p.status_requisicao || p.status || '',
+        statusRequisicao: p.statusRequisicao || p.status_requisicao || p.status || '',
         etapa: p.etapa || '',
         fornecedor_nome: fornecedorNome,
         fornecedor_documento: fornecedorDoc,
@@ -158,7 +161,10 @@ export function adaptRequisicao(req: any): Order {
         id_requisicao: reqId,
         id_pedido: '',
         titulo: req.titulo || '',
-        status_pedido: statusStr,
+        status_pedido: req.statusPedido || req.status_pedido || '',
+        statusPedido: req.statusPedido || req.status_pedido || '',
+        status_requisicao: req.status || statusStr,
+        statusRequisicao: req.status || statusStr,
         etapa: etapaStr,
         fornecedor_nome: isCancelado ? 'Cancelado antes do pedido' : 'Em cotação / aprovação',
         fornecedor_documento: '',
@@ -196,15 +202,22 @@ export function enrichPedidoWithRequisicao(pedido: Order, req: any): Order {
     const reqStatusCancelado = reqStatusUpper.includes('CANCEL') || reqStatusUpper.includes('NEGAD') || reqStatusUpper.includes('REJEIT')
     const isReqCancelado = hasCancelamento || reqStatusCancelado || req.etapa === null
 
+    const reqStatus = req.status || (isReqCancelado ? 'Cancelado' : (req.etapa ? `Etapa 0${req.etapa}` : ''))
+    cloned.status_requisicao = reqStatus
+    cloned.statusRequisicao = reqStatus
+
     if (isReqCancelado) {
         cloned.cancelamento = req.cancelamento || { usuario: 'Sistema', justificativa: req.status || 'Ordem Negada' }
         cloned.etapa = 'CANCELADO'
-        cloned.status_pedido = 'Cancelado'
+        cloned.status_pedido = cloned.status_pedido || cloned.statusPedido || 'Cancelado'
+        cloned.statusPedido = cloned.status_pedido
     } else {
         cloned.cancelamento = null
         if (req.etapa) {
             cloned.etapa = `ETAPA 0${req.etapa}`
         }
+        cloned.status_pedido = cloned.status_pedido || cloned.statusPedido || ''
+        cloned.statusPedido = cloned.status_pedido
     }
 
     cloned.solicitante = req.solicitante || req.requisitante || cloned.requisitante
